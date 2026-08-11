@@ -23,7 +23,14 @@
 
 ## 安裝
 
-需要 SillyTavern 1.18.0 或更新版本，以及已啟用的 Server Plugins。
+需要 SillyTavern 1.14.0 或更新版本、Node.js 18 或更新版本，以及已啟用的 Server Plugins。
+
+已驗證版本：
+
+- SillyTavern 1.14.0（Node.js 18 世代）
+- SillyTavern 1.18.0（Node.js 20 世代）
+
+1.12.13 至 1.13.x 的官方原始碼雖然已具備本擴充所需 API，但尚未完成實機驗證，因此目前不列入正式支援。1.12.12 或更早版本缺少完整的工作階段期限或 CSRF 介面，不支援。
 
 ### 1. 安裝前端擴充
 
