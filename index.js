@@ -8,7 +8,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -88,7 +88,12 @@ async function request(path, options = {}) {
         },
     });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body?.error || `Settings sync HTTP ${response.status}`);
+    if (!response.ok) {
+        if (response.status === 404) {
+            throw new Error('找不到同步後端插件（HTTP 404）。Docker 若選擇「為自己安裝」，請使用 README 的自動偵測安裝指令，然後重啟容器。');
+        }
+        throw new Error(body?.error || `Settings sync HTTP ${response.status}`);
+    }
     return body;
 }
 

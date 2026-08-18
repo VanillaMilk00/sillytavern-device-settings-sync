@@ -36,3 +36,4 @@ try {
 }
 
 console.log('Set enableServerPlugins: true in config.yaml, then restart SillyTavern.');
+console.log('After restart, the API is mounted at /api/plugins/device-settings-sync.');

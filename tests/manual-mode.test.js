@@ -23,7 +23,13 @@ test('network synchronization is reachable only from manual actions', () => {
 
 test('publishes the verified SillyTavern and Node.js compatibility floor', () => {
     assert.equal(manifest.minimum_client_version, '1.14.0');
-    assert.equal(manifest.version, '1.3.0');
+    assert.equal(manifest.version, '1.3.1');
     assert.equal(packageJson.engines.node, '>=18');
     assert.equal(serverPackage.engines.node, '>=18');
+});
+
+test('explains the Docker per-user installation cause when the server route is missing', () => {
+    assert.match(source, /response\.status === 404/u);
+    assert.match(source, /為自己安裝/u);
+    assert.match(source, /自動偵測安裝指令/u);
 });

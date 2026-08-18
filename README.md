@@ -40,6 +40,8 @@
 https://github.com/VanillaMilk00/sillytavern-device-settings-sync
 ```
 
+安裝視窗可以選擇「為自己安裝」或「為所有使用者安裝」。兩者都受支援，但檔案位置不同；Docker 使用者請使用下方的自動偵測指令。
+
 ### 2. 連結伺服器插件
 
 先在 `config.yaml` 設定：
@@ -60,15 +62,23 @@ Windows PowerShell，在 SillyTavern 根目錄執行：
 node .\public\scripts\extensions\third-party\sillytavern-device-settings-sync\install-server-plugin.mjs .
 ```
 
-官方 Docker 容器名稱為 `sillytavern` 時，在宿主機執行：
+官方 Docker 容器名稱為 `sillytavern` 時，在宿主機執行以下自動偵測指令。它同時支援「為自己安裝」的 `data/<帳號>/extensions` 路徑，以及「為所有使用者安裝」的 `public/scripts/extensions/third-party` 路徑：
 
 ```bash
-docker exec sillytavern node public/scripts/extensions/third-party/sillytavern-device-settings-sync/install-server-plugin.mjs /home/node/app
+docker exec sillytavern sh -lc 'set -eu; for script in /home/node/app/public/scripts/extensions/third-party/sillytavern-device-settings-sync/install-server-plugin.mjs /home/node/app/data/*/extensions/sillytavern-device-settings-sync/install-server-plugin.mjs; do if [ -f "$script" ]; then exec node "$script" /home/node/app; fi; done; echo "找不到 sillytavern-device-settings-sync；請先在擴充功能頁完成安裝" >&2; exit 1'
+```
+
+若你明確選擇了「為所有使用者安裝」，也可以使用較短的原始指令：
+
+```bash
+docker exec sillytavern node /home/node/app/public/scripts/extensions/third-party/sillytavern-device-settings-sync/install-server-plugin.mjs /home/node/app
 ```
 
 完成後重啟 SillyTavern。伺服器插件採用連結，因此透過擴充管理器更新 GitHub 倉庫時，前端與伺服器端會一起更新；伺服器端程式變更後仍需重啟 SillyTavern。
 
 如果 `plugins/device-settings-sync` 已經是一般目錄，安裝器會拒絕覆寫。請先自行備份及移走舊目錄，再重新執行安裝器。
+
+若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，重啟容器後再試；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
 
 ## 使用
 
