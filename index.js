@@ -1,5 +1,7 @@
 import { getRequestHeaders, saveSettings, saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
+import { translate } from '../../../i18n.js';
+import { POPUP_RESULT, Popup } from '../../../popup.js';
 import { DEFAULT_MAX_VALUE_BYTES, parseAdditionalExcludes } from './lib/filter.js';
 import {
     applyServerState,
@@ -36,6 +38,16 @@ const diagnostics = {
 };
 
 let operationInFlight = false;
+
+function tr(key, fallback) {
+    return translate(fallback, key);
+}
+
+function formatText(key, fallback, values) {
+    return tr(key, fallback).replace(/\{(\w+)\}/gu, (match, name) => (
+        Object.hasOwn(values, name) ? String(values[name]) : match
+    ));
+}
 
 function randomId(prefix) {
     const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -90,7 +102,10 @@ async function request(path, options = {}) {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
         if (response.status === 404) {
-            throw new Error('找不到同步後端插件（HTTP 404）。Docker 若選擇「為自己安裝」，請使用 README 的自動偵測安裝指令，然後重啟容器。');
+            throw new Error(tr(
+                'dss.error.backendMissing',
+                'The settings sync server plugin was not found (HTTP 404). If you installed the Docker extension for yourself, use the auto-detect installation command in the README, then restart the container.',
+            ));
         }
         throw new Error(body?.error || `Settings sync HTTP ${response.status}`);
     }
@@ -116,7 +131,9 @@ function restorePullResult() {
         diagnostics.failedWrites = Math.max(0, Number(result.failed) || 0);
         diagnostics.lastAction = 'download';
         diagnostics.lastSyncAt = String(result.at || '');
-        diagnostics.lastError = result.failed ? `${result.failed} 個設定無法寫入瀏覽器儲存空間` : '';
+        diagnostics.lastError = result.failed
+            ? formatText('dss.error.storageWriteFailed', '{count} settings could not be written to browser storage.', { count: result.failed })
+            : '';
     } catch {
         sessionStorage.removeItem(PULL_RESULT_KEY);
     }
@@ -131,6 +148,36 @@ function setOperationState(status, inFlight) {
     renderStatus();
 }
 
+async function confirmManualAction(title, message, okButton) {
+    const result = await Popup.show.confirm(title, message, {
+        okButton,
+        cancelButton: tr('dss.common.cancel', 'Cancel'),
+    });
+    return result === POPUP_RESULT.AFFIRMATIVE;
+}
+
+async function confirmManualPull() {
+    return confirmManualAction(
+        tr('dss.pull.title', 'Sync from server'),
+        tr(
+            'dss.pull.confirmMessage',
+            'This will overwrite syncable settings on this device with the server settings. Local changes that have not been uploaded may be lost, and the page will reload automatically when complete. Continue?',
+        ),
+        tr('dss.pull.confirmButton', 'Sync now'),
+    );
+}
+
+async function confirmManualPush() {
+    return confirmManualAction(
+        tr('dss.push.title', 'Upload local settings'),
+        tr(
+            'dss.push.confirmMessage',
+            'This will replace the server sync data with settings from this device. Portable settings that exist on the server but were deleted locally will also be deleted. Continue?',
+        ),
+        tr('dss.push.confirmButton', 'Upload now'),
+    );
+}
+
 async function manualPull({ reload = true } = {}) {
     if (operationInFlight) return { ...diagnostics };
     setOperationState('downloading', true);
@@ -143,7 +190,9 @@ async function manualPull({ reload = true } = {}) {
         diagnostics.failedWrites += result.failed;
         diagnostics.lastAction = 'download';
         diagnostics.lastSyncAt = at;
-        diagnostics.lastError = result.failed ? `${result.failed} 個設定無法寫入瀏覽器儲存空間` : '';
+        diagnostics.lastError = result.failed
+            ? formatText('dss.error.storageWriteFailed', '{count} settings could not be written to browser storage.', { count: result.failed })
+            : '';
         refreshSnapshot();
 
         if (reload) {
@@ -155,7 +204,10 @@ async function manualPull({ reload = true } = {}) {
             }));
             diagnostics.status = 'reloading';
             renderStatus();
-            globalThis.toastr?.success('已下載伺服器設定，正在重新載入以完整套用。', '跨裝置設定同步');
+            globalThis.toastr?.success(
+                tr('dss.toast.pullSuccess', 'Server settings downloaded. Reloading to apply them completely.'),
+                tr('dss.panel.title', 'Device Settings Sync'),
+            );
             setTimeout(() => location.reload(), 350);
         } else {
             setOperationState('manual-ready', false);
@@ -164,7 +216,7 @@ async function manualPull({ reload = true } = {}) {
     } catch (error) {
         diagnostics.lastError = error?.message || String(error);
         setOperationState('error', false);
-        globalThis.toastr?.error(diagnostics.lastError, '跨裝置設定同步');
+        globalThis.toastr?.error(diagnostics.lastError, tr('dss.panel.title', 'Device Settings Sync'));
         throw error;
     }
 }
@@ -205,12 +257,15 @@ async function manualPush() {
         diagnostics.lastSyncAt = new Date().toISOString();
         diagnostics.lastError = '';
         setOperationState('manual-ready', false);
-        globalThis.toastr?.success(`已上傳 ${mutations.length} 個可攜式設定。`, '跨裝置設定同步');
+        globalThis.toastr?.success(
+            formatText('dss.toast.pushSuccess', 'Uploaded {count} portable settings.', { count: mutations.length }),
+            tr('dss.panel.title', 'Device Settings Sync'),
+        );
         return { ...diagnostics };
     } catch (error) {
         diagnostics.lastError = error?.message || String(error);
         setOperationState('error', false);
-        globalThis.toastr?.error(diagnostics.lastError, '跨裝置設定同步');
+        globalThis.toastr?.error(diagnostics.lastError, tr('dss.panel.title', 'Device Settings Sync'));
         throw error;
     }
 }
@@ -219,18 +274,35 @@ function renderStatus() {
     const target = document.querySelector('#dss_status');
     if (!target) return;
     const labels = {
-        'manual-ready': '手動模式（待命）',
-        downloading: '正在從伺服器下載',
-        saving: '正在儲存並上傳',
-        reloading: '正在重新載入套用',
-        error: '錯誤',
+        'manual-ready': tr('dss.status.manualReady', 'Manual mode (ready)'),
+        downloading: tr('dss.status.downloading', 'Downloading from server'),
+        saving: tr('dss.status.saving', 'Saving and uploading'),
+        reloading: tr('dss.status.reloading', 'Reloading to apply'),
+        error: tr('dss.status.error', 'Error'),
     };
+    const action = diagnostics.lastAction === 'upload'
+        ? tr('dss.push.title', 'Upload local settings')
+        : tr('dss.pull.title', 'Sync from server');
     target.textContent = [
-        `狀態：${labels[diagnostics.status] || diagnostics.status}`,
-        `伺服器版本：${diagnostics.revision}　可同步設定：${diagnostics.portableKeys}　已排除：${diagnostics.excludedKeys}`,
-        diagnostics.lastAction ? `最近動作：${diagnostics.lastAction === 'upload' ? '上傳本機設定' : '從伺服器同步'}` : '',
-        diagnostics.lastSyncAt ? `最近手動同步：${new Date(diagnostics.lastSyncAt).toLocaleString()}` : '',
-        diagnostics.lastError ? `最近錯誤：${diagnostics.lastError}` : '',
+        formatText('dss.status.line', 'Status: {status}', { status: labels[diagnostics.status] || diagnostics.status }),
+        formatText(
+            'dss.status.serverLine',
+            'Server revision: {revision}  Syncable settings: {portable}  Excluded: {excluded}',
+            {
+                revision: diagnostics.revision,
+                portable: diagnostics.portableKeys,
+                excluded: diagnostics.excludedKeys,
+            },
+        ),
+        diagnostics.lastAction
+            ? formatText('dss.status.lastActionLine', 'Last action: {action}', { action })
+            : '',
+        diagnostics.lastSyncAt
+            ? formatText('dss.status.lastSyncLine', 'Last manual sync: {date}', { date: new Date(diagnostics.lastSyncAt).toLocaleString() })
+            : '',
+        diagnostics.lastError
+            ? formatText('dss.status.lastErrorLine', 'Last error: {error}', { error: diagnostics.lastError })
+            : '',
     ].filter(Boolean).join('\n');
 }
 
@@ -245,13 +317,20 @@ function bindPanel() {
         saveSettingsDebounced();
         refreshSnapshot();
     });
-    document.querySelector('#dss_pull')?.addEventListener('click', () => manualPull().catch(() => {}));
-    document.querySelector('#dss_push')?.addEventListener('click', () => manualPush().catch(() => {}));
+    document.querySelector('#dss_pull')?.addEventListener('click', async () => {
+        if (await confirmManualPull()) manualPull().catch(() => {});
+    });
+    document.querySelector('#dss_push')?.addEventListener('click', async () => {
+        if (await confirmManualPush()) manualPush().catch(() => {});
+    });
     document.querySelector('#dss_reload')?.addEventListener('click', () => location.reload());
     document.querySelector('#dss_copy')?.addEventListener('click', async () => {
         const safe = { ...diagnostics, device: getDeviceId().slice(-8) };
         await navigator.clipboard.writeText(JSON.stringify(safe, null, 2));
-        globalThis.toastr?.success('已複製診斷資料（不包含設定值）。', '跨裝置設定同步');
+        globalThis.toastr?.success(
+            tr('dss.toast.copySuccess', 'Diagnostics copied (no setting values included).'),
+            tr('dss.panel.title', 'Device Settings Sync'),
+        );
     });
 }
 
@@ -265,22 +344,22 @@ function createPanel() {
     panel.innerHTML = `
         <div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>跨裝置設定同步</b>
+                <b data-i18n="dss.panel.title">Device Settings Sync</b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div>
             <div class="inline-drawer-content">
                 <div class="dss_manual_notice">
-                    <b>純手動模式</b><br>
-                    載入頁面時不會下載、上傳、輪詢或監聽設定變更。只有按下方同步按鈕時才會連線。
+                    <b data-i18n="dss.panel.manualHeading">Manual mode</b><br>
+                    <span data-i18n="dss.panel.manualNotice">No settings are downloaded, uploaded, polled, or monitored when the page loads. The extension connects only when you use a sync button below.</span>
                 </div>
-                <small>「上傳本機設定」會先儲存目前的 SillyTavern 帳戶與擴充設定，再上傳可攜式瀏覽器設定。「從伺服器同步」會下載設定並重新載入一次以完整套用。OAuth／登入憑證會包含在可攜式 localStorage 中；HttpOnly 登入 Cookie 無法同步。</small>
-                <label for="dss_excludes">額外排除的 localStorage 鍵（每行一個，可用 *）</label>
-                <textarea id="dss_excludes" rows="3" placeholder="example-cache:*"></textarea>
+                <small data-i18n="dss.panel.description">“Upload local settings” first saves the current SillyTavern account and extension settings, then uploads portable browser settings. “Sync from server” downloads settings and reloads the page once to apply them completely. OAuth and login credentials stored in localStorage are included; HttpOnly login cookies cannot be synchronized.</small>
+                <label for="dss_excludes" data-i18n="dss.panel.excludesLabel">Additional localStorage keys to exclude (one per line; * wildcards supported)</label>
+                <textarea id="dss_excludes" rows="3" placeholder="example-cache:*" data-i18n="[placeholder]dss.panel.excludesPlaceholder"></textarea>
                 <div class="dss_actions">
-                    <button id="dss_pull" class="menu_button">從伺服器同步</button>
-                    <button id="dss_push" class="menu_button">上傳本機設定</button>
-                    <button id="dss_reload" class="menu_button">重新載入套用</button>
-                    <button id="dss_copy" class="menu_button">複製診斷資料</button>
+                    <button id="dss_pull" class="menu_button" data-i18n="dss.pull.title">Sync from server</button>
+                    <button id="dss_push" class="menu_button" data-i18n="dss.push.title">Upload local settings</button>
+                    <button id="dss_reload" class="menu_button" data-i18n="dss.panel.reloadButton">Reload to apply</button>
+                    <button id="dss_copy" class="menu_button" data-i18n="dss.panel.copyButton">Copy diagnostics</button>
                 </div>
                 <pre id="dss_status"></pre>
             </div>

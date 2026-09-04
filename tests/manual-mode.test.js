@@ -21,6 +21,14 @@ test('network synchronization is reachable only from manual actions', () => {
     assert.match(source, /dss_push[^]*manualPush/u);
 });
 
+test('asks for confirmation before either manual synchronization action', () => {
+    assert.match(source, /Popup\.show\.confirm/u);
+    assert.match(source, /dss_pull[^]*confirmManualPull\(\)[^]*manualPull/u);
+    assert.match(source, /dss_push[^]*confirmManualPush\(\)[^]*manualPush/u);
+    assert.match(source, /Local changes that have not been uploaded may be lost/u);
+    assert.match(source, /deleted locally will also be deleted/u);
+});
+
 test('publishes the verified SillyTavern and Node.js compatibility floor', () => {
     assert.equal(manifest.minimum_client_version, '1.14.0');
     assert.equal(manifest.version, '1.3.1');
@@ -30,6 +38,6 @@ test('publishes the verified SillyTavern and Node.js compatibility floor', () =>
 
 test('explains the Docker per-user installation cause when the server route is missing', () => {
     assert.match(source, /response\.status === 404/u);
-    assert.match(source, /為自己安裝/u);
-    assert.match(source, /自動偵測安裝指令/u);
+    assert.match(source, /installed the Docker extension for yourself/u);
+    assert.match(source, /auto-detect installation command/u);
 });
