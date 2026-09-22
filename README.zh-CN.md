@@ -43,6 +43,34 @@ docker exec sillytavern sh -lc 'set -eu; for script in /home/node/app/public/scr
 
 如果 `plugins/device-settings-sync` 已是普通目录，安装器会拒绝覆盖；请先自行备份并移走旧目录。出现 HTTP 404 时请检查插件链接、更新并重启服务器／容器。如果安装扩展时提示 `Directory already exists`，说明前端已安装，请使用扩展管理器的**更新**，不要重复安装或直接删除原目录。
 
+### Android（Termux）
+
+如果 SillyTavern 在 Android 手机的 **Termux** 中运行，请在 Termux 终端输入以下命令，**不要使用 Docker 或 PowerShell 命令，也不是在浏览器控制台执行**。先确认 `config.yaml` 已设置 `enableServerPlugins: true`；如果酒馆占用当前终端，可先按 `Ctrl+C` 停止。
+
+以下假设酒馆位于 `~/SillyTavern`。如果使用启动器或其他路径，请改为实际 SillyTavern 根目录（包含 `config.yaml`、`start.sh` 和 `src/users.js`）。根据前端扩展的安装方式，**选择一组**执行：
+
+「为所有用户安装」：
+
+```bash
+cd ~/SillyTavern && node public/scripts/extensions/third-party/sillytavern-device-settings-sync/install-server-plugin.mjs .
+```
+
+「为自己安装」，使用默认账户 `default-user`：
+
+```bash
+cd ~/SillyTavern && node data/default-user/extensions/sillytavern-device-settings-sync/install-server-plugin.mjs .
+```
+
+其他账户请将 `default-user` 替换为实际账户文件夹名称；如果修改过 `dataRoot`，也要调整 `data/` 路径。若提示找不到安装脚本，先确认扩展是全局安装还是账户专属安装，不要删除重装。
+
+看到 `Linked server plugin` 或 `Server plugin link is already correct` 后，在酒馆根目录重新启动：
+
+```bash
+bash start.sh
+```
+
+Termux 的酒馆目录和启动方式可参考 [SillyTavern 官方 Android 说明](https://docs.sillytavern.app/installation/android-%28termux%29/)。如果手机只是通过浏览器连接电脑／云端酒馆，**手机不需要执行安装命令**；请在实际运行 SillyTavern 的服务器上安装插件并重启。
+
 ## 同步与五格备份
 
 在来源设备按「上传本机设置」，其他设备登录同一账户后按「从服务器同步」。下载完成自动刷新。上传会同步移除那些远端存在、但来源设备已删除的可移植键。

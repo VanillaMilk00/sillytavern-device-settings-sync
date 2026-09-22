@@ -43,6 +43,34 @@ docker exec sillytavern sh -lc 'set -eu; for script in /home/node/app/public/scr
 
 If the installer finds an ordinary directory at `plugins/device-settings-sync`, it refuses to overwrite it. Back it up and move it yourself before linking again. An HTTP 404 means the server plugin is missing or outdated: verify the link and restart the server/container. If extension installation reports `Directory already exists`, use **Update** in the extension manager instead of reinstalling or deleting the existing directory.
 
+### Android (Termux)
+
+If SillyTavern runs **inside Termux on your Android phone**, run these commands in the Termux terminal, **not Docker, PowerShell or the browser console**. First set `enableServerPlugins: true` in `config.yaml`. If the server occupies that terminal, stop it with `Ctrl+C`.
+
+These examples assume `~/SillyTavern`. If you use a launcher or another location, substitute the actual SillyTavern root containing `config.yaml`, `start.sh` and `src/users.js`. Choose **one** command according to how you installed the frontend extension.
+
+Installed for all users:
+
+```bash
+cd ~/SillyTavern && node public/scripts/extensions/third-party/sillytavern-device-settings-sync/install-server-plugin.mjs .
+```
+
+Installed for yourself, using the default account `default-user`:
+
+```bash
+cd ~/SillyTavern && node data/default-user/extensions/sillytavern-device-settings-sync/install-server-plugin.mjs .
+```
+
+For another account, replace `default-user` with its account directory name. Adjust `data/` too if you changed `dataRoot`. A missing installer script usually means you chose the wrong global/per-user path; check the installation location instead of deleting and reinstalling.
+
+After `Linked server plugin` or `Server plugin link is already correct`, restart from the SillyTavern root:
+
+```bash
+bash start.sh
+```
+
+See the [official Android guide](https://docs.sillytavern.app/installation/android-%28termux%29/) for the Termux working directory and startup command. If your phone only connects through a browser to a PC/cloud-hosted SillyTavern, **no installation command is needed on the phone**. Install the plugin and restart on the actual server instead.
+
 ## Sync and five backup slots
 
 Use **Upload local settings** on the source device, then **Sync from server** on another device using the same account. Download automatically reloads the page. Upload mirrors removals of portable keys from the source device to the server.

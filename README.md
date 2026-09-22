@@ -78,6 +78,36 @@ Windows PowerShell，在 SillyTavern 根目錄執行：
 node .\public\scripts\extensions\third-party\sillytavern-device-settings-sync\install-server-plugin.mjs .
 ```
 
+#### Android（Termux）
+
+如果 SillyTavern 是在 Android 手機的 **Termux** 內執行，請在 Termux 終端機輸入以下指令，**不要使用 Docker 或 PowerShell 指令，也不是在瀏覽器主控台執行**。先確認 `config.yaml` 已設定 `enableServerPlugins: true`；若酒館正在同一個終端機執行，可先按 `Ctrl+C` 停止。
+
+以下假設酒館位於 `~/SillyTavern`；若你使用啟動器或其他安裝路徑，請改成實際的 SillyTavern 根目錄（內有 `config.yaml`、`start.sh` 與 `src/users.js`）。依前端擴充的安裝方式，**選一組**執行：
+
+「為所有使用者安裝」：
+
+```bash
+cd ~/SillyTavern && node public/scripts/extensions/third-party/sillytavern-device-settings-sync/install-server-plugin.mjs .
+```
+
+「為自己安裝」，使用預設帳戶 `default-user`：
+
+```bash
+cd ~/SillyTavern && node data/default-user/extensions/sillytavern-device-settings-sync/install-server-plugin.mjs .
+```
+
+其他帳戶請把 `default-user` 換成實際帳戶資料夾名稱；若修改過 `dataRoot`，也要調整 `data/` 路徑。若提示找不到安裝腳本，先核對擴充是全域安裝還是帳戶專屬安裝，不要重新刪除安裝。
+
+看到 `Linked server plugin` 或 `Server plugin link is already correct` 後，在酒館根目錄重新啟動：
+
+```bash
+bash start.sh
+```
+
+Termux 的酒館目錄與啟動方式可參考 [SillyTavern 官方 Android 說明](https://docs.sillytavern.app/installation/android-%28termux%29/)。如果手機只是用瀏覽器連到電腦／雲端酒館，**手機不需要執行安裝指令**；請在實際執行 SillyTavern 的伺服器安裝插件並重啟。
+
+#### Docker
+
 官方 Docker 容器名稱為 `sillytavern` 時，在宿主機執行以下自動偵測指令。它同時支援「為自己安裝」的 `data/<帳號>/extensions` 路徑，以及「為所有使用者安裝」的 `public/scripts/extensions/third-party` 路徑：
 
 ```bash
