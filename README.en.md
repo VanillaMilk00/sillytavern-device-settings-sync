@@ -4,7 +4,7 @@
 
 Manually synchronize portable browser settings and account/extension settings between devices using the same SillyTavern account.
 
-Version **1.4.0**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new backup API.
+Version **1.5.0**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new backup API.
 
 ## Features
 
@@ -16,7 +16,7 @@ Version **1.4.0**: **restart the SillyTavern server plugin after upgrading**. Re
 
 ## Installation and upgrade
 
-Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. The 1.4.0 integration was tested in a separate SillyTavern 1.14.0 installation with Node.js 22 and Edge Chromium, including mobile-sized viewports. Previous sync versions were also tested on SillyTavern 1.18.0; this is not a claim of testing every host version or physical mobile browser. CI covers Node.js 18, 20 and 24.
+Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. The 1.5.0 integration was tested in a separate SillyTavern 1.14.0 installation with Node.js 22 and Edge Chromium, including mobile-sized viewports. Previous sync versions were also tested on SillyTavern 1.18.0; this is not a claim of testing every host version or physical mobile browser. CI covers Node.js 18, 20 and 24.
 
 1. In Extensions → Install extension, enter:
 
@@ -125,6 +125,15 @@ All APIs use SillyTavern session authentication and CSRF protection. Under `/api
 - `GET /backups`: up to five summaries, without values.
 - `POST /backups`: `{ operationId, reason, archive }`; reasons are `upload`, `download`, `import`, `restore`, `delete`.
 - `GET /backups/:id`: a retained backup belonging to the current account.
+
+### One-click analysis, capacity ceiling and extension hints (1.5.0)
+
+- **Cleanup suggestions → Analyze now** scans all keys, sorts by size and marks the largest ten. Green means possible cache/temp/debug/log data, yellow means manual review, and red is protected from batch cleanup. This is a key-name heuristic, not AI or proof that data is unused.
+- Protection takes precedence: credentials, history, drafts, chats, settings and internal keys are not recommended even when their names contain `cache`. The `tt:` namespace requires review. Red items cannot be selected for batch cleanup; deliberate removal remains available in Local data.
+- Nothing is selected initially. Select recommended items selects green entries only; yellow entries can be checked manually. **Back up and clean** previews exact keys, count and size, then requires a successful full server backup even when optional pre-change backups are disabled. Cancellation, backup failure or stale data abort deletion. Write failures use rollback; success reports before/after usage and released space. Changes remain local.
+- The panel shows a **5 MiB reference ceiling**, not a measurement of this device. Runtime limits and accounting can differ. There is no standard direct localStorage quota query, and total site quota is not a substitute. [MDN quota documentation](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria)
+- The explicitly confirmed capacity test grows one new temporary key and removes it afterward, reporting an estimated UTF-16 range and timestamp. The test value is capped at 16 MiB; reaching this safety bound reports only a lower bound. **It may briefly block the page or make writes in other tabs fail: export important data and pause other activity first.** It never runs automatically, clears storage or overwrites existing keys. Concurrent changes abort testing; unsafe temporary-key cleanup is reported. Results are not a permanent guarantee.
+- The extension/value-type column displays recognized suffixes from original keys, otherwise inferred `.json` or `.txt` labels. It distinguishes JSON objects/arrays, text, Data URIs and Blob URLs, skipping JSON parsing above 1 Mi characters. Hints **never rename keys**; exports remain JSON archives containing the original string values.
 
 ## Development
 

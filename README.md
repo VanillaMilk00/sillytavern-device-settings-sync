@@ -4,7 +4,7 @@
 
 讓同一個 SillyTavern 帳戶在手機、桌面及其他裝置之間，手動同步擴充設定與可攜式瀏覽器設定。
 
-目前版本：**1.4.0**。升級後必須**重啟 SillyTavern 伺服器插件**；僅重新整理瀏覽器不會載入新的備份 API。
+目前版本：**1.5.0**。升級後必須**重啟 SillyTavern 伺服器插件**；僅重新整理瀏覽器不會載入新的備份 API。
 
 ## 功能
 
@@ -44,7 +44,7 @@
 
 需要 SillyTavern 1.14.0 或更新版本、Node.js 18 或更新版本，以及已啟用的 Server Plugins。
 
-1.4.0 新功能已在獨立的 SillyTavern 1.14.0 安裝、Node.js 22 與 Edge Chromium 驗證前後端整合、桌面／手機尺寸及三語介面。既有同步功能曾驗證 SillyTavern 1.18.0；本次不宣稱對所有版本與實體手機完成實機測試。CI 保留 Node.js 18、20、24 測試矩陣。
+1.5.0 新功能已在獨立的 SillyTavern 1.14.0 安裝、Node.js 22 與 Edge Chromium 驗證前後端整合、桌面／手機尺寸及三語介面。既有同步功能曾驗證 SillyTavern 1.18.0；本次不宣稱對所有版本與實體手機完成實機測試。CI 保留 Node.js 18、20、24 測試矩陣。
 
 1.12.13 至 1.13.x 的官方原始碼雖然已具備本擴充所需 API，但尚未完成實機驗證，因此目前不列入正式支援。1.12.12 或更早版本缺少完整的工作階段期限或 CSRF 介面，不支援。
 
@@ -126,7 +126,7 @@ docker exec sillytavern node /home/node/app/public/scripts/extensions/third-part
 
 若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，重啟容器後再試；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
 
-若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.4.0 後再重啟伺服器。
+若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.5.0 後再重啟伺服器。
 
 ## 使用
 
@@ -182,6 +182,15 @@ JSON 檔案／備份請求上限為 **32 MiB**，超限拒絕且不修改既有�
 用量估算為所有 `(鍵.length + 值.length) × 2`，包含同步排除項目；JSON 匯出位元組大小另計。此估算依據 [MDN 的 UTF-16 儲存格式說明](https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage)，不是瀏覽器配額，也不以網站總配額推測 localStorage 上限。
 
 清理分析完全在本機進行，列出最大的十項與鍵名疑似快取／暫存／除錯／記錄的候選項目。歷史、草稿、聊天、憑證及同步器內部資料需人工判斷；被同步排除不代表可以安全刪除。不推測最後使用時間，也不自動清理。
+
+### 一鍵分析、容量上限與副檔名（1.5.0）
+
+- 「清理建議 → 立即分析」會掃描全部鍵，依容量排序並標示最大的十項。綠色是疑似快取／暫存／除錯／記錄，黃色需人工判斷，紅色為批次清理保護項目。分類只依鍵名，不是 AI，也不能證明資料已無用途。
+- 保護規則優先：憑證、歷史、草稿、聊天、設定與同步器內部鍵，不會因名稱同時含有 `cache` 而成為推薦項目。`tt:` 命名空間需人工判斷。紅色項目不能在批次清理選取；確定需要處理時，請使用「本機資料」的一般移除功能。
+- 預設不勾選任何項目。「選取推薦項目」只選綠色，黃色可自行勾選；按「備份並清理」後，確認清單、鍵數及容量，**強制先建立完整伺服器備份**，即使一般操作的自動備份開關關閉也一樣。取消、備份失敗或預覽過期均不刪除；寫入失敗沿用復原機制。完成後顯示清理前後用量與釋放量，且只修改本機。
+- 容量區顯示 **5 MiB 參考上限**，並非目前裝置的實測值；不同環境的限制及計量可能不同。瀏覽器未提供直接查詢 localStorage 上限的標準 API，網站整體配額也不能替代。[MDN 儲存配額說明](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria)
+- 可自行確認執行「實測容量」：只新增一個暫存鍵，逐步測試並在結束時移除，顯示 UTF-16 計量的估算範圍及測試時間。測試值最多 16 MiB；到達安全界線仍未滿時，只顯示下限，不宣稱已測得最大值。**測試可能短暫卡住頁面或使其他分頁寫入失敗，請先匯出重要資料並暫停其他操作。**不會自動測試、清空儲存空間或覆寫既有鍵；偵測到其他資料變更即中止，暫存鍵無法安全移除時會明確提示。結果只供當次參考。
+- 樹狀清單新增「副檔名／值類型」欄：已知副檔名取自原鍵；沒有時依內容顯示推測的 `.json` 或 `.txt`，並標示推測。可辨識 JSON 物件／陣列、一般文字、Data URI 與 Blob URL；超過 1 Mi 字元的值不解析 JSON。這只是顯示提示，**不改鍵名**，所有匯出仍是原始字串鍵值的 JSON 封裝檔。
 
 ### 備份 API
 

@@ -1,9 +1,11 @@
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../../../popup.js';
 import { classifyStorageEntry } from '../lib/filter.js';
 import {
-    readStorage, createArchive, serializeArchive, parseArchive, entryBytes,
-    buildTree, layoutTreemap, cleanupAdvice, planImport, planDelete, MAX_ARCHIVE_BYTES, inScope, intersectScope,
+    readStorage, createArchive, serializeArchive, parseArchive, entryBytes, totalBytes,
+    buildTree, layoutTreemap, planImport, planDelete, MAX_ARCHIVE_BYTES, inScope, intersectScope,
 } from '../lib/storage-model.js';
+import { analyzeCleanup, classifyCleanup, planCleanup, describeEntry } from '../lib/storage-analysis.js';
+import { REFERENCE_CAPACITY_BYTES } from '../lib/capacity-probe.js';
 import { msg, bytes, errorText } from '../lib/messages.js';
 
 function element(tag, text, className) {
@@ -60,10 +62,13 @@ function classification(key, value, options) {
 }
 
 class StorageTree {
-    constructor(values, filterOptions, onSelection = () => {}) {
+    constructor(values, filterOptions, onSelection = () => {}, cleanup = false) {
         this.values = values;
         this.filterOptions = filterOptions;
         this.onSelection = onSelection;
+        this.cleanup = cleanup;
+        this.analysis = new Map(analyzeCleanup(values).map((item, index) => [item.key, { ...item, largest: index < 10 }]));
+        this.types = new Map([...values].map(([key, value]) => [key, describeEntry(key, value)]));
         this.root = buildTree(values);
         this.selected = new Set();
         this.scopeHint = null;
@@ -84,7 +89,7 @@ class StorageTree {
         }
         this.sort.addEventListener('change', () => this.render());
         this.controls.append(this.search, this.sort,
-            button(msg('selectAll'), () => { this.scopeHint = null; this.visibleKeys().forEach(key => this.selected.add(key)); this.changed(); }),
+            button(msg('selectAll'), () => { this.scopeHint = null; this.visibleKeys().filter(key => this.selectable(key)).forEach(key => this.selected.add(key)); this.changed(); }),
             button(msg('clearSelection'), () => { this.scopeHint = null; this.selected.clear(); this.changed(); }),
             button(msg('expandAll'), () => { this.walk(node => { if (node.type === 'folder') this.expanded.add(node.id); }); this.render(); }),
             button(msg('collapseAll'), () => { this.expanded.clear(); this.render(); }));
@@ -94,7 +99,7 @@ class StorageTree {
         this.table = element('table', undefined, 'dss_tree');
         const head = element('thead');
         const header = element('tr');
-        for (const key of ['name', 'size', 'percent', 'keys', 'classification']) header.append(element('th', msg(key)));
+        for (const key of ['name', 'size', 'percent', 'keys', 'extension', cleanup ? 'cleanupClassification' : 'classification']) header.append(element('th', msg(key)));
         head.append(header);
         this.body = element('tbody');
         this.table.append(head, this.body);
@@ -118,6 +123,16 @@ class StorageTree {
         return [...this.values.keys()].filter(key => key.toLocaleLowerCase().includes(query));
     }
 
+    selectable(key) { return !this.cleanup || this.analysis.get(key).category !== 'protected'; }
+
+    selectRecommended() {
+        this.search.value = '';
+        this.selected = new Set([...this.analysis.values()].filter(item => item.category === 'recommended').map(item => item.key));
+        this.scopeHint = null;
+        this.walk(node => { if (node.type === 'folder') this.expanded.add(node.id); });
+        this.changed();
+    }
+
     scope() {
         // Only an explicit whole-folder selection carries prefix replacement authority.
         const folder = this.scopeHint;
@@ -132,7 +147,7 @@ class StorageTree {
 
     locate(key) {
         this.search.value = '';
-        this.selected = new Set([key]);
+        this.selected = new Set(this.selectable(key) ? [key] : []);
         this.scopeHint = null;
         this.walk(node => { if (node.type === 'folder' && node.keys.includes(key)) this.expanded.add(node.id); });
         this.changed();
@@ -148,6 +163,7 @@ class StorageTree {
         const query = Boolean(this.search.value);
         const renderNode = (node, depth) => {
             const keys = node.keys.filter(key => visible.has(key));
+            const selectableKeys = keys.filter(key => this.selectable(key));
             if (!keys.length) return;
             const row = element('tr');
             row.dataset.nodeId = node.id;
@@ -157,11 +173,12 @@ class StorageTree {
             const check = element('input');
             check.type = 'checkbox';
             check.setAttribute('aria-label', node.type === 'file' ? node.key : node.prefix);
-            check.checked = keys.every(key => this.selected.has(key));
-            check.indeterminate = !check.checked && keys.some(key => this.selected.has(key));
+            check.disabled = !selectableKeys.length;
+            check.checked = selectableKeys.length > 0 && selectableKeys.every(key => this.selected.has(key));
+            check.indeterminate = !check.checked && selectableKeys.some(key => this.selected.has(key));
             check.addEventListener('change', () => {
                 this.scopeHint = check.checked && node.type === 'folder' && keys.length === node.keys.length ? node : null;
-                keys.forEach(key => check.checked ? this.selected.add(key) : this.selected.delete(key));
+                selectableKeys.forEach(key => check.checked ? this.selected.add(key) : this.selected.delete(key));
                 this.changed();
             });
             const open = this.expanded.has(node.id) || query;
@@ -173,7 +190,7 @@ class StorageTree {
                     this.mapRoot = node;
                     this.render();
                 } else {
-                    this.selected = new Set([node.key]);
+                    this.selected = new Set(this.selectable(node.key) ? [node.key] : []);
                     this.scopeHint = null;
                     this.changed();
                 }
@@ -183,10 +200,17 @@ class StorageTree {
             label.append(check, caption);
             cell.append(label);
             const filteredBytes = keys.reduce((sum, key) => sum + entryBytes(key, this.values.get(key)), 0);
+            const type = this.types.get(node.key);
+            const typeCell = element('td', type ? type.extension + (type.inferred ? ' (' + msg('inferred') + ')' : '') + ' · ' + msg(type.type) : '');
+            typeCell.className = 'dss_type';
+            const advice = this.analysis.get(node.key);
+            const reason = this.cleanup && advice ? msg('cleanup' + advice.category[0].toUpperCase() + advice.category.slice(1)) + ' · ' + msg(advice.reason)
+                + (advice.largest ? ' · ' + msg('largestBadge') : '')
+                : node.type === 'file' ? classification(node.key, this.values.get(node.key), this.filterOptions) : '';
             row.append(cell, element('td', bytes(filteredBytes)),
                 element('td', (this.root.bytes ? 100 * filteredBytes / this.root.bytes : 0).toFixed(1) + '%'),
-                element('td', String(keys.length)),
-                element('td', node.type === 'file' ? classification(node.key, this.values.get(node.key), this.filterOptions) : ''));
+                element('td', String(keys.length)), typeCell, element('td', reason));
+            if (this.cleanup && advice) row.classList.add('dss_category_' + advice.category);
             row.classList.toggle('dss_selected', check.checked);
             this.body.append(row);
             if (node.type === 'file') this.rows.set(node.key, row);
@@ -206,15 +230,17 @@ class StorageTree {
         layoutTreemap(nodes).forEach(({ node, x, y, width, height }, index) => {
             const name = node.type === 'file' && node.key === '' ? msg('emptyKey') : node.name;
             const box = button(name + '\n' + bytes(node.bytes), () => {
-                this.selected = new Set(node.keys);
+                this.selected = new Set(node.keys.filter(key => this.selectable(key)));
                 this.scopeHint = node.type === 'folder' && !query ? node : null;
                 this.changed();
             });
             box.className = 'dss_map_box';
             box.title = (node.prefix || node.key || node.name) + ' · ' + bytes(node.bytes);
             box.style.cssText = 'left:' + x + '%;top:' + y + '%;width:' + width + '%;height:' + height + '%;--tile-hue:' + ((index * 47 + 190) % 360);
-            box.classList.toggle('dss_selected', node.keys.every(key => this.selected.has(key)));
-            box.setAttribute('aria-pressed', String(node.keys.every(key => this.selected.has(key))));
+            const selectableKeys = node.keys.filter(key => this.selectable(key));
+            const selected = selectableKeys.length > 0 && selectableKeys.every(key => this.selected.has(key));
+            box.classList.toggle('dss_selected', selected);
+            box.setAttribute('aria-pressed', String(selected));
             box.addEventListener('dblclick', () => { if (node.type === 'folder') { this.mapRoot = node; this.render(); } });
             this.map.append(box);
         });
@@ -228,6 +254,7 @@ export async function openStorageManager(api) {
     let currentTree;
     let viewGeneration = 0;
     let pending = false;
+    let capacityResult = null;
     const root = element('div', undefined, 'dss_manager');
     const heading = element('h3', msg('manager'));
     const status = element('p', '', 'dss_feedback');
@@ -238,7 +265,33 @@ export async function openStorageManager(api) {
     setting.input.addEventListener('change', () => api.setBackupBeforeChanges(setting.input.checked));
     const reload = button(msg('reload'), () => location.reload());
     reload.hidden = true;
-    root.append(heading, element('p', msg('estimateNote'), 'dss_note'), setting.root, tabs, status, reload, content);
+    const capacityPanel = element('section', undefined, 'dss_capacity_panel');
+    const capacityUsed = element('p');
+    const capacityActual = element('p');
+    capacityPanel.append(element('strong', msg('capacityTitle')), capacityUsed,
+        element('p', msg('capacityReference', { size: bytes(REFERENCE_CAPACITY_BYTES) }), 'dss_note'), capacityActual,
+        button(msg('probe'), () => guard(async () => {
+            const result = await new Popup(msg('probeWarning'), POPUP_TYPE.CONFIRM, '', {
+                okButton: msg('probe'), cancelButton: msg('cancel'), allowVerticalScrolling: true,
+            }).show();
+            if (result !== POPUP_RESULT.AFFIRMATIVE) return;
+            capacityResult = null;
+            capacityActual.textContent = msg('probing');
+            try { capacityResult = await api.measureCapacity(); }
+            finally { updateCapacity(); }
+        })));
+    root.append(heading, capacityPanel, element('p', msg('estimateNote'), 'dss_note'),
+        element('p', msg('extensionHint'), 'dss_note'), setting.root, tabs, status, reload, content);
+
+    function updateCapacity() {
+        const values = readStorage(localStorage);
+        capacityUsed.textContent = msg('capacity', { count: values.size, size: bytes(totalBytes(values)) });
+        capacityActual.textContent = !capacityResult ? msg('capacityUnknown') : msg(capacityResult.limited ? 'capacityAtLeast' : 'capacityMeasured', {
+            low: bytes(capacityResult.lowerBytes), high: bytes(capacityResult.upperBytes || 0),
+            remaining: bytes(Math.max(0, capacityResult.lowerBytes - capacityResult.usedBytes)),
+            date: new Date(capacityResult.testedAt).toLocaleString(),
+        });
+    }
 
     async function guard(work) {
         if (pending || api.isBusy()) return;
@@ -249,6 +302,7 @@ export async function openStorageManager(api) {
             if (error.code === 'rollbackFailed' || error.code === 'writeRolledBack') {
                 api.onChanged();
                 if (activeTab === 'local') renderLocal();
+                if (activeTab === 'cleanup') renderCleanup();
             }
             status.textContent = errorText(error);
             status.classList.add('dss_error');
@@ -258,11 +312,17 @@ export async function openStorageManager(api) {
 
     function source() { return api.source(); }
 
+    function clearFeedback() {
+        status.textContent = '';
+        status.classList.remove('dss_error');
+    }
+
     function localChanged(count) {
         status.classList.remove('dss_error');
         status.textContent = msg('changeSuccess', { count });
         reload.hidden = false;
         api.onChanged();
+        updateCapacity();
     }
 
     async function chooseFile(scope) {
@@ -328,12 +388,13 @@ export async function openStorageManager(api) {
 
     function renderLocal() {
         content.replaceChildren();
+        updateCapacity();
         const values = readStorage(localStorage);
         currentTree = new StorageTree(values, api.filterOptions());
         const toolbar = element('div', undefined, 'dss_toolbar');
         const internal = checkbox(msg('includeInternal'));
         toolbar.append(
-            button(msg('rescan'), () => guard(async () => renderLocal())),
+            button(msg('rescan'), () => guard(async () => { renderLocal(); clearFeedback(); })),
             button(msg('exportAll'), () => guard(async () => download(createArchive(readStorage(localStorage), { kind: 'full' }, source())))),
             button(msg('exportSelected'), () => guard(async () => {
                 if (currentTree.selected.size) download(createArchive(readStorage(localStorage), currentTree.scope(), source()));
@@ -361,27 +422,68 @@ export async function openStorageManager(api) {
         content.append(toolbar, internal.root, element('p', msg('credentialsNote'), 'dss_note'), currentTree.node);
     }
 
+    function renderCleanup() {
+        content.replaceChildren();
+        updateCapacity();
+        const values = readStorage(localStorage);
+        const advice = analyzeCleanup(values);
+        const summary = element('div', undefined, 'dss_cleanup_summary');
+        for (const category of ['recommended', 'protected', 'review']) {
+            const items = advice.filter(item => item.category === category);
+            const card = element('div', undefined, 'dss_category_' + category);
+            card.append(element('strong', msg('cleanup' + category[0].toUpperCase() + category.slice(1))),
+                element('p', msg('cleanupGroup', { count: items.length, size: bytes(items.reduce((sum, item) => sum + item.bytes, 0)) })));
+            summary.append(card);
+        }
+        const toolbar = element('div', undefined, 'dss_toolbar');
+        const clean = button(msg('backupClean'), () => guard(async () => {
+            // Classify again at the mutation boundary; never trust a checkbox alone.
+            const plan = planCleanup(tree.values, tree.selected);
+            if (!plan.changes.length) { status.textContent = msg('noChanges'); return; }
+            const beforeSize = totalBytes(plan.before);
+            const info = element('div');
+            info.append(element('p', msg('confirmDelete', { count: plan.changes.length,
+                size: bytes(plan.changes.reduce((sum, change) => sum + entryBytes(change.key, change.before), 0)),
+            })), element('p', msg('automaticBackup')), element('p', msg('credentialsNote')), element('p', msg('localOnly')));
+            const list = element('ul', undefined, 'dss_deletion_list');
+            plan.changes.forEach(change => list.append(element('li', change.key + ' · ' + msg(classifyCleanup(change.key).reason))));
+            info.append(list);
+            const result = await new Popup(info, POPUP_TYPE.CONFIRM, '', {
+                okButton: msg('backupClean'), cancelButton: msg('cancel'), allowVerticalScrolling: true,
+            }).show();
+            if (result !== POPUP_RESULT.AFFIRMATIVE) return;
+            const count = await api.applyLocalPlan(plan, 'delete', { forceBackup: true });
+            localChanged(count);
+            const afterSize = totalBytes(readStorage(localStorage));
+            status.textContent = msg('cleanupResult', { count, before: bytes(beforeSize), after: bytes(afterSize), freed: bytes(Math.max(0, beforeSize - afterSize)) });
+            renderCleanup();
+        }));
+        const tree = new StorageTree(values, api.filterOptions(), () => { clean.disabled = !tree.selected.size; }, true);
+        tree.expanded = new Set();
+        tree.walk(node => { if (node.type === 'folder') tree.expanded.add(node.id); });
+        tree.render();
+        clean.disabled = true;
+        currentTree = tree;
+        toolbar.append(button(msg('analyze'), () => guard(async () => { renderCleanup(); clearFeedback(); })),
+            button(msg('selectRecommended'), () => tree.selectRecommended()), clean,
+            button(msg('locate'), () => guard(async () => {
+                const keys = [...tree.selected];
+                if (!keys.length) return;
+                await showTab('local');
+                currentTree.locate(keys[0]);
+                currentTree.selected = new Set(keys);
+                currentTree.changed();
+            })));
+        content.append(element('p', msg('cleanupIntro')), summary, toolbar, tree.node);
+    }
+
     async function showTab(tab) {
         activeTab = tab;
         const generation = ++viewGeneration;
         for (const node of tabs.children) node.classList.toggle('dss_active', node.dataset.tab === tab);
         content.replaceChildren();
         if (tab === 'local') return renderLocal();
-        if (tab === 'cleanup') {
-            content.append(element('p', msg('cleanupHelp')));
-            const list = element('div', undefined, 'dss_advice_list');
-            const advice = cleanupAdvice(readStorage(localStorage));
-            if (!advice.length) list.append(element('p', msg('empty')));
-            for (const item of advice) {
-                const row = element('div', undefined, 'dss_advice');
-                row.append(element('strong', item.key), element('span', bytes(item.bytes)),
-                    element('p', msg(item.caution ? 'review' : item.candidate ? 'candidate' : 'largest')),
-                    button(msg('locate'), () => guard(async () => { await showTab('local'); currentTree.locate(item.key); })));
-                list.append(row);
-            }
-            content.append(list);
-            return;
-        }
+        if (tab === 'cleanup') return renderCleanup();
         content.append(element('p', msg('backupHelp')), element('p', msg('credentialsNote'), 'dss_note'));
         const records = await api.listBackups();
         if (disposed || generation !== viewGeneration) return;
@@ -431,6 +533,7 @@ export async function openStorageManager(api) {
         if (!disposed) {
             status.textContent = msg('stalePreview');
             api.onChanged();
+            updateCapacity();
         }
     };
     window.addEventListener('storage', storageListener);

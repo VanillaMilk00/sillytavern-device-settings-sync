@@ -87,6 +87,16 @@
 .dss_advice > span { margin-inline-start: 12px; }
 .dss_deletion_list { max-height: 160px; overflow: auto; overflow-wrap: anywhere; }
 .dss_pending > .dss_toolbar, .dss_pending > .dss_check { pointer-events: none; opacity: .6; }
+.dss_capacity_panel { padding: 10px; border: 1px solid var(--SmartThemeBorderColor, #888); border-radius: 8px; }
+.dss_capacity_panel p { margin: 6px 0; }
+.dss_cleanup_summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.dss_cleanup_summary > div { flex: 1 1 180px; border: 1px solid var(--SmartThemeBorderColor, #888); padding: 10px; border-radius: 6px; }
+.dss_category_recommended { border-inline-start: 4px solid #68c78c !important; }
+.dss_category_protected { border-inline-start: 4px solid #e99090 !important; }
+.dss_category_review { border-inline-start: 4px solid #e4c363 !important; }
+.dss_type { min-width: 105px; overflow-wrap: anywhere; }
+.dss_tree td:last-child { min-width: 120px; }
+.dss_manager button:disabled { opacity: .5; cursor: not-allowed; }
 
 @media (max-width: 760px) {
     .dss_explorer_layout { grid-template-columns: minmax(0, 1fr); }

@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5.0 - 2026-09-22
+
+### 繁體中文
+
+- 新增三色一鍵清理分析、選取推薦項目及強制先備份的批次清理；保護規則優先，沿用過期預覽檢查與失敗復原，不自動刪除。
+- 新增容量參考上限與手動確認的暫存鍵實測；顯示 UTF-16 估算範圍，測試達安全界線時只報下限。
+- 新增副檔名／資料型態提示，不修改原鍵或 JSON 匯出格式；完整支援三語。
+- 更新三語 README，保留 Android Termux 指令；擴充單元及隔離瀏覽器整合測試。
+- **升級後請重啟 SillyTavern。完整備份仍僅含 localStorage，可能包含憑證；容量實測前請匯出重要資料並暫停其他分頁操作。**
+
+### 简体中文
+
+- 新增三色分析、推荐项选择及强制先备份的批量清理，保护规则优先，保留过期预览检查和失败回滚。
+- 新增容量参考上限、手动容量实测及扩展名／值类型提示；不改原键，不自动清理或实测。
+- 更新三语文档及测试。升级后请重启 SillyTavern；实测前导出重要数据并暂停其他操作。
+
+### English
+
+- Add three-color analysis and selectable recommendations, with mandatory full server backup before batch cleanup, protection-first rules, stale checks and rollback.
+- Add a reference capacity ceiling, opt-in temporary-key capacity measurement and extension/value-type hints without renaming keys or changing archives.
+- Update all three languages, documentation and tests. Restart SillyTavern after upgrading; export important data and pause other activity before probing capacity.
+
 ## 1.4.0 - 2026-09-22
 
 ### 繁體中文

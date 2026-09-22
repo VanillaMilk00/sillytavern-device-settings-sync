@@ -6,6 +6,7 @@ import { DEFAULT_MAX_VALUE_BYTES, parseAdditionalExcludes } from './lib/filter.j
 import { readStorage, createArchive, serializeArchive, totalBytes, assertUnchanged, applyPlan, StorageError } from './lib/storage-model.js';
 import { msg, errorText, bytes } from './lib/messages.js';
 import { openStorageManager } from './ui/storage-manager.js';
+import { probeCapacity } from './lib/capacity-probe.js';
 import {
     applyServerState,
     diffSnapshots,
@@ -13,7 +14,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -176,12 +177,12 @@ async function backupCurrentStorage(reason) {
     }
 }
 
-async function applyLocalPlan(plan, reason) {
+async function applyLocalPlan(plan, reason, { forceBackup = false } = {}) {
     if (operationInFlight) throw new StorageError('operationBusy');
     setOperationState('applying', true);
     try {
         assertUnchanged(localStorage, plan.before);
-        if (getSettings().backupBeforeChanges) await backupCurrentStorage(reason);
+        if (forceBackup || getSettings().backupBeforeChanges) await backupCurrentStorage(reason);
         const count = applyPlan(localStorage, plan);
         refreshSnapshot();
         return count;
@@ -199,6 +200,12 @@ async function showManager() {
             isBusy: () => operationInFlight,
             setBackupBeforeChanges: value => { getSettings().backupBeforeChanges = value; saveSettingsDebounced(); },
             applyLocalPlan,
+            measureCapacity: async () => {
+                if (operationInFlight) throw new StorageError('operationBusy');
+                setOperationState('probing', true);
+                try { return await probeCapacity(localStorage); }
+                finally { setOperationState('manual-ready', false); refreshSnapshot(); }
+            },
             listBackups: () => request('/backups'),
             getBackup: id => request('/backups/' + encodeURIComponent(id)),
             onChanged: refreshSnapshot,
@@ -343,6 +350,7 @@ function renderStatus() {
         reloading: tr('dss.status.reloading', 'Reloading to apply'),
         error: tr('dss.status.error', 'Error'),
         applying: msg('applying'),
+        probing: msg('probing'),
     };
     const action = diagnostics.lastAction === 'upload'
         ? tr('dss.push.title', 'Upload local settings')

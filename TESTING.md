@@ -9,6 +9,10 @@ npm run check
 
 保留原有 20 項測試，加入備份與資料操作案例。測試以暫存資料夾或記憶體 Storage 執行，不操作日常帳戶。CI 執行 Node.js 18、20、24。
 
+1.5.0 共 59 項單元測試，包括保護規則優先、三色分類、型態與副檔名提示、容量區間／安全界線、暫存鍵碰撞、跨分頁修改及移除失敗。隔離瀏覽器有 30 項檢查，另有 4 項伺服器安全檢查。
+
+Version 1.5.0 has 59 unit tests, 30 browser checks and 4 server-security checks. Added unit coverage includes protection-first classification, extension/type hints, quota bounds, temporary-key collisions, concurrent changes and cleanup failures.
+
 The original 20 tests remain, with additional backup and storage-operation coverage. Unit tests use temporary directories and in-memory Storage, not everyday account data.
 
 ## 隔離整合環境 / Disposable host
@@ -46,6 +50,10 @@ The default browser channel is Edge; set `DSS_BROWSER_CHANNEL=chrome` for Chrome
 瀏覽器檢查包含頁面載入不傳輸、取消、備份失敗、快照內容、五格並行與重試、JSON 下載、預覽與範圍取代、跨分頁衝突、刪除確認與可選備份、最舊格還原、清理不刪除、樹／方塊圖搜尋多選、手機捲動、下載前備份與三語。
 
 Browser checks cover idle loading, cancellation, backup failure, snapshot contents, five-slot concurrency/retries, downloads, import/replace previews, cross-tab conflicts, deletion and optional backups, oldest-slot restoration, non-destructive cleanup, search/shared selection, mobile scrolling, pre-download backup and all three languages.
+
+1.5.0 加驗三色保護與副檔名、批次清理取消／備份失敗／過期預覽／成功後快照與釋放量，以及容量實測取消和完成後資料完全不變。**容量測試會刻意暫時填滿隔離瀏覽器的 localStorage；切勿在日常帳戶執行此測試腳本。**手機驗證使用瀏覽器視窗尺寸，並非實體 Android 或 iOS 測試。
+
+Additional browser checks cover protected categories and suffixes, batch-cleanup cancellation/failure/stale preview/success and required backup contents, plus cancelled and completed quota probes with exact storage preservation. Capacity probing intentionally fills disposable browser storage temporarily. Mobile coverage uses viewport sizes, not physical Android/iOS devices.
 
 ## 登入與 CSRF / Authentication and CSRF
 
