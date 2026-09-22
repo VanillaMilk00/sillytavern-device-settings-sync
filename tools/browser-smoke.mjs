@@ -138,6 +138,26 @@ try {
         });
     }
     await settle();
+    async function assertAlignedExplorer() {
+        const tree = await manager.locator('.dss_tree_scroll').boundingBox();
+        const panel = await manager.locator('.dss_map_panel').boundingBox();
+        const blocks = await manager.locator('.dss_treemap').boundingBox();
+        assert.ok(Math.abs(tree.y - panel.y) < 1, 'desktop panels start at the same height');
+        assert.ok(Math.abs(tree.height - panel.height) < 1, 'desktop panels have equal heights');
+        assert.ok(Math.abs(tree.y + tree.height - blocks.y - blocks.height) < 1, 'blocks fill to the bottom of the tree');
+        assert.ok(blocks.height > 0, 'treemap remains visible');
+    }
+    await assertAlignedExplorer();
+    await manager.getByRole('button', { name: 'Expand all', exact: true }).click();
+    await assertAlignedExplorer();
+    await page.setViewportSize({ width: 1440, height: 780 });
+    await assertAlignedExplorer();
+    await manager.getByRole('searchbox').fill('qa:cache');
+    await assertAlignedExplorer();
+    await manager.getByRole('searchbox').fill('');
+    await manager.getByRole('button', { name: 'Collapse all', exact: true }).click();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await assertAlignedExplorer();
     await page.screenshot({ path: path.join(output, 'manager-desktop.png'), fullPage: true });
     pass('manager opens without fetching backups; desktop is wide; reload is initially hidden');
 
@@ -317,6 +337,7 @@ try {
     const treeBox = await manager.locator('.dss_tree_scroll').boundingBox();
     const mapBox = await manager.locator('.dss_map_panel').boundingBox();
     assert.ok(mapBox.y >= treeBox.y + treeBox.height - 1);
+    assert.equal(Math.round((await manager.locator('.dss_treemap').boundingBox()).height), 220);
     assert.ok((await page.locator('dialog[open]').last().boundingBox()).width <= 390);
     const scroll = page.locator('dialog[open]').last().locator('.popup-content');
     assert.equal(await scroll.evaluate(node => getComputedStyle(node).overflowY), 'auto');

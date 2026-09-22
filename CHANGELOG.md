@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1 - 2026-09-22
+
+- 繁體中文：桌面右側容量方塊圖隨左側列表伸展並對齊底部；手機維持上下排列。加入展開、搜尋及視窗尺寸變更的等高回歸檢查。
+- 简体中文：桌面右侧容量方块图随左侧列表伸展并对齐底部；手机保持上下排列，新增布局回归检查。
+- English: Stretch the desktop treemap to align with the tree's bottom while preserving the stacked mobile layout; test expansion, search and viewport resizing.
+
 ## 1.5.0 - 2026-09-22
 
 ### 繁體中文

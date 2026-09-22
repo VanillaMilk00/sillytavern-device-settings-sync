@@ -1,6 +1,6 @@
 {
   "name": "sillytavern-device-settings-sync",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "private": true,
   "description": "Manual cross-device browser settings sync for SillyTavern",
   "author": "VanillaMilk00",

@@ -71,9 +71,10 @@
 .dss_tree_name { display: flex; gap: 6px; align-items: center; min-width: 140px; }
 .dss_tree_name .menu_button { border: 0; background: none; text-align: start; overflow-wrap: anywhere; word-break: break-word; box-shadow: none; }
 .dss_tree .dss_selected { background: color-mix(in srgb, var(--SmartThemeQuoteColor, #e4aa68) 18%, transparent); }
-.dss_map_panel { min-width: 0; }
-.dss_map_panel > button { max-width: 100%; overflow-wrap: anywhere; }
-.dss_treemap { position: relative; height: 360px; width: 100%; margin-top: 8px; background: #222; border-radius: 6px; overflow: hidden; }
+.dss_map_panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.dss_map_panel > button { align-self: flex-start; flex: none; max-width: 100%; overflow-wrap: anywhere; }
+/* Stretch within the shared grid row; the tree determines the desktop height. */
+.dss_treemap { position: relative; flex: 1 1 0; min-height: 0; width: 100%; margin-top: 8px; background: #222; border-radius: 6px; overflow: hidden; }
 .dss_treemap .dss_map_box {
     position: absolute; margin: 0; min-width: 0; min-height: 0;
     padding: 4px; overflow: hidden; border: 1px solid #171b21; border-radius: 0;
@@ -101,6 +102,6 @@
 @media (max-width: 760px) {
     .dss_explorer_layout { grid-template-columns: minmax(0, 1fr); }
     .dss_tree_scroll { max-height: 36vh; }
-    .dss_treemap { height: 220px; }
+    .dss_treemap { flex: none; height: 220px; }
     .dss_manager .dss_toolbar .menu_button { flex: 1 1 auto; }
 }

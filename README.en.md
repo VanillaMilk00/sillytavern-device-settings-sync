@@ -4,7 +4,7 @@
 
 Manually synchronize portable browser settings and account/extension settings between devices using the same SillyTavern account.
 
-Version **1.5.0**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new backup API.
+Version **1.5.1**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new backup API.
 
 ## Features
 
