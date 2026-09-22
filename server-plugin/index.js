@@ -18,6 +18,7 @@ const {
 } = await import(pathToFileURL(path.resolve(process.cwd(), 'src/users.js')).href);
 import { createInitialState, MAX_STATE_BYTES, mergeMutations, normalizeState, touchSettings } from './state.js';
 import { BackupStore } from './backups.js';
+import { commitMutations, findCommit } from './commit.js';
 import { StorageError } from '../lib/storage-model.js';
 
 const FILE_NAME = 'device-settings-sync.json';
@@ -115,8 +116,33 @@ function installSillyTavernSecurity(router) {
 export async function init(router) {
     installSillyTavernSecurity(router);
 
+    router.get('/commits/:id', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            const receipt = await serialize(root, async () => findCommit(await readState(root), request.params.id));
+            if (!receipt) return response.status(404).json({ code: 'commitNotFound' });
+            response.set('Cache-Control', 'no-store').json(receipt);
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.post('/commit', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            const result = await serialize(root, async () => {
+                const result = commitMutations(await readState(root), request.body);
+                if (!result.replayed) await writeState(root, result.state);
+                return { ...result.receipt, replayed: result.replayed };
+            });
+            response.set('Cache-Control', 'no-store').json(result);
+        } catch (error) {
+            if (['autoConflict', 'commitConflict'].includes(error.code)) return response.status(409).json({ code: error.code });
+            if (error.code === 'invalidCommit') return response.status(400).json({ code: error.code });
+            sendError(response, error);
+        }
+    });
+
     router.get('/health', (_request, response) => {
-        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.5.2', capabilities: ['backups-v1'] });
+        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.6.0', capabilities: ['backups-v1', 'atomic-sync-v1'] });
     });
 
     router.get('/backups', async (request, response) => {

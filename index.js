@@ -1,12 +1,14 @@
-import { getRequestHeaders, saveSettings, saveSettingsDebounced } from '../../../../script.js';
+import { getRequestHeaders, saveSettings, saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
+import { getCurrentUserHandle } from '../../../user.js';
 import { extension_settings } from '../../../extensions.js';
 import { translate } from '../../../i18n.js';
-import { POPUP_RESULT, Popup } from '../../../popup.js';
+import { POPUP_RESULT, POPUP_TYPE, Popup } from '../../../popup.js';
 import { DEFAULT_MAX_VALUE_BYTES, parseAdditionalExcludes } from './lib/filter.js';
 import { readStorage, createArchive, serializeArchive, totalBytes, assertUnchanged, applyPlan, StorageError } from './lib/storage-model.js';
 import { msg, errorText, bytes } from './lib/messages.js';
 import { openStorageManager } from './ui/storage-manager.js';
 import { probeCapacity } from './lib/capacity-probe.js';
+import { AutoSync } from './lib/auto-sync.js';
 import {
     applyServerState,
     diffSnapshots,
@@ -14,7 +16,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.5.2';
+const VERSION = '1.6.0';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -45,6 +47,7 @@ const diagnostics = {
 let operationInFlight = false;
 let managerOpen = false;
 let provisionalDeviceId;
+let automatic;
 
 function tr(key, fallback) {
     return translate(fallback, key);
@@ -108,15 +111,15 @@ async function request(path, options = {}) {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-        if (body?.code) throw new StorageError(body.code);
+        if (body?.code) throw Object.assign(new StorageError(body.code), { status: response.status });
         if (response.status === 404 && path.startsWith('/backups')) throw new StorageError('backupBackendMissing');
         if (response.status === 404) {
-            throw new Error(tr(
+            throw Object.assign(new Error(tr(
                 'dss.error.backendMissing',
                 'The settings sync server plugin was not found (HTTP 404). If you installed the Docker extension for yourself, use the auto-detect installation command in the README, then restart the container.',
-            ));
+            )), { status: response.status });
         }
-        throw new Error(body?.error || `Settings sync HTTP ${response.status}`);
+        throw Object.assign(new Error(body?.error || `Settings sync HTTP ${response.status}`), { status: response.status });
     }
     return body;
 }
@@ -164,10 +167,13 @@ function archiveSource() {
     return { origin: location.origin, deviceId: getDeviceId(false) };
 }
 
-async function backupCurrentStorage(reason) {
+function makeBackup(reason) {
     const archive = createArchive(readStorage(localStorage), { kind: 'full' }, archiveSource());
     serializeArchive(archive);
-    const body = JSON.stringify({ operationId: randomId('operation'), reason, archive });
+    return JSON.stringify({ operationId: randomId('operation'), reason, archive });
+}
+
+async function sendBackup(body) {
     // Keep the same operation ID and payload on a transport retry.
     try {
         return await request('/backups', { method: 'POST', body });
@@ -177,7 +183,21 @@ async function backupCurrentStorage(reason) {
     }
 }
 
-async function applyLocalPlan(plan, reason, { forceBackup = false } = {}) {
+function backupCurrentStorage(reason) { return sendBackup(makeBackup(reason)); }
+
+async function coordinated(work) {
+    try { return automatic ? await automatic.withLock(work) : await work(); }
+    catch (error) {
+        if (error.code === 'operationBusy') globalThis.toastr?.warning(msg('operationBusy'));
+        throw error;
+    }
+}
+
+function applyLocalPlan(plan, reason, options) {
+    return coordinated(() => applyLocalPlanLocked(plan, reason, options));
+}
+
+async function applyLocalPlanLocked(plan, reason, { forceBackup = false } = {}) {
     if (operationInFlight) throw new StorageError('operationBusy');
     setOperationState('applying', true);
     try {
@@ -200,12 +220,12 @@ async function showManager() {
             isBusy: () => operationInFlight,
             setBackupBeforeChanges: value => { getSettings().backupBeforeChanges = value; saveSettingsDebounced(); },
             applyLocalPlan,
-            measureCapacity: async () => {
+            measureCapacity: () => coordinated(async () => {
                 if (operationInFlight) throw new StorageError('operationBusy');
                 setOperationState('probing', true);
                 try { return await probeCapacity(localStorage); }
                 finally { setOperationState('manual-ready', false); refreshSnapshot(); }
-            },
+            }),
             listBackups: () => request('/backups'),
             getBackup: id => request('/backups/' + encodeURIComponent(id)),
             onChanged: refreshSnapshot,
@@ -246,7 +266,11 @@ async function confirmManualPush() {
     );
 }
 
-async function manualPull({ reload = true } = {}) {
+async function manualPull(options = {}) {
+    return coordinated(() => manualPullLocked(options));
+}
+
+async function manualPullLocked({ reload = true } = {}) {
     if (operationInFlight) return { ...diagnostics };
     setOperationState('downloading', true);
     try {
@@ -263,6 +287,7 @@ async function manualPull({ reload = true } = {}) {
             ? formatText('dss.error.storageWriteFailed', '{count} settings could not be written to browser storage.', { count: result.failed })
             : '';
         refreshSnapshot();
+        if (!result.failed) await automatic?.remember(snapshotPortableStorage(localStorage, filterOptions()).values, state).catch(error => automatic.fatal(error));
 
         if (reload) {
             sessionStorage.setItem(PULL_RESULT_KEY, JSON.stringify({
@@ -291,6 +316,10 @@ async function manualPull({ reload = true } = {}) {
 }
 
 async function manualPush() {
+    return coordinated(manualPushLocked);
+}
+
+async function manualPushLocked() {
     if (operationInFlight) return { ...diagnostics };
     setOperationState('saving', true);
     try {
@@ -326,6 +355,7 @@ async function manualPush() {
         diagnostics.lastAction = 'upload';
         diagnostics.lastSyncAt = new Date().toISOString();
         diagnostics.lastError = '';
+        await automatic?.remember(snapshot.values, state).catch(error => automatic.fatal(error));
         setOperationState('manual-ready', false);
         globalThis.toastr?.success(
             formatText('dss.toast.pushSuccess', 'Uploaded {count} portable settings.', { count: mutations.length }),
@@ -344,7 +374,7 @@ function renderStatus() {
     const target = document.querySelector('#dss_status');
     if (!target) return;
     const labels = {
-        'manual-ready': tr('dss.status.manualReady', 'Manual mode (ready)'),
+        'manual-ready': diagnostics.mode === 'automatic' ? msg(automatic?.status || 'autoReady') : tr('dss.status.manualReady', 'Manual mode (ready)'),
         downloading: tr('dss.status.downloading', 'Downloading from server'),
         saving: tr('dss.status.saving', 'Saving and uploading'),
         reloading: tr('dss.status.reloading', 'Reloading to apply'),
@@ -398,7 +428,7 @@ function bindPanel() {
     document.querySelector('#dss_manage')?.addEventListener('click', showManager);
     document.querySelector('#dss_reload')?.addEventListener('click', () => location.reload());
     document.querySelector('#dss_copy')?.addEventListener('click', async () => {
-        const safe = { ...diagnostics, device: getDeviceId().slice(-8) };
+        const safe = { ...diagnostics, automatic: automatic?.describe(), device: getDeviceId(false).slice(-8) };
         await navigator.clipboard.writeText(JSON.stringify(safe, null, 2));
         globalThis.toastr?.success(
             tr('dss.toast.copySuccess', 'Diagnostics copied (no setting values included).'),
@@ -426,6 +456,7 @@ function createPanel() {
                     <span data-i18n="dss.panel.manualNotice">No settings are downloaded, uploaded, polled, or monitored when the page loads. The extension connects only when you use a sync button below.</span>
                 </div>
                 <small data-i18n="dss.panel.description">“Upload local settings” first saves the current SillyTavern account and extension settings, then uploads portable browser settings. “Sync from server” downloads settings and reloads the page once to apply them completely. OAuth and login credentials stored in localStorage are included; HttpOnly login cookies cannot be synchronized.</small>
+                <div id="dss_auto"></div>
                 <label for="dss_excludes" data-i18n="dss.panel.excludesLabel">Additional localStorage keys to exclude (one per line; * wildcards supported)</label>
                 <textarea id="dss_excludes" rows="3" placeholder="example-cache:*" data-i18n="[placeholder]dss.panel.excludesPlaceholder"></textarea>
                 <div class="dss_actions">
@@ -444,15 +475,95 @@ function createPanel() {
     restorePullResult();
     refreshSnapshot();
     renderStatus();
+    if (automatic) renderAuto(automatic.describe());
     return true;
 }
+
+function renderAuto(state) {
+    const root = document.querySelector('#dss_auto');
+    if (!root) return;
+    diagnostics.mode = state.upload || state.download ? 'automatic' : 'manual';
+    renderStatus();
+    const notice = document.querySelector('#device_settings_sync_panel .dss_manual_notice');
+    if (notice) notice.hidden = state.upload || state.download;
+    if (!root.children.length) {
+        for (const [name, key] of [['upload', 'autoUpload'], ['download', 'autoDownload']]) {
+            const label = document.createElement('label');
+            label.className = 'dss_check';
+            const input = document.createElement('input');
+            input.type = 'checkbox'; input.dataset.auto = name;
+            const text = document.createElement('span'); text.textContent = msg(key);
+            label.append(input, text); root.append(label);
+            input.addEventListener('change', async () => {
+                const checked = input.checked;
+                input.disabled = true;
+                try {
+                    if (checked && !(await confirmManualAction(msg(key), msg('autoConsent'), msg(key)))) return;
+                    await automatic.setOption(name, checked);
+                } catch (error) { globalThis.toastr?.error(errorText(error)); }
+                finally { renderAuto(automatic.describe()); }
+            });
+        }
+        const note = document.createElement('p'); note.className = 'dss_note'; note.textContent = msg('autoLimits'); root.append(note);
+        const status = document.createElement('p'); status.id = 'dss_auto_status'; status.setAttribute('role', 'status'); root.append(status);
+        const actions = document.createElement('div'); actions.className = 'dss_actions'; root.append(actions);
+        for (const [key, action] of [['autoPause', () => automatic.pause()], ['autoRetry', () => automatic.retry()]]) {
+            const button = document.createElement('button'); button.className = 'menu_button'; button.textContent = msg(key);
+            button.addEventListener('click', () => action().catch(error => globalThis.toastr?.error(errorText(error)))); actions.append(button);
+        }
+    }
+    for (const input of root.querySelectorAll('input')) {
+        input.checked = state[input.dataset.auto];
+        input.disabled = !state.supported;
+    }
+    root.querySelector('#dss_auto_status').textContent = msg(state.status) + '\n' + msg('autoDetails', {
+        count: state.active, last: state.lastEnd ? new Date(state.lastEnd).toLocaleString() : '—',
+        due: state.due ? new Date(state.due).toLocaleString() : '—',
+    }) + (state.error ? '\n' + errorText({ code: state.error, message: state.error }) : '');
+}
+
+async function resolveAutoConflict(counts) {
+    const root = document.createElement('div');
+    const description = document.createElement('p'); description.textContent = msg('autoConflictDetails', counts); root.append(description);
+    let choice = 'later';
+    const popup = new Popup(root, POPUP_TYPE.TEXT, '', { okButton: msg('autoLater'), allowVerticalScrolling: true });
+    for (const [value, label] of [['upload', 'autoKeepLocal'], ['download', 'autoUseServer']]) {
+        const button = document.createElement('button'); button.className = 'menu_button'; button.textContent = msg(label);
+        button.addEventListener('click', () => { choice = value; popup.complete(POPUP_RESULT.AFFIRMATIVE); });
+        root.append(button);
+    }
+    await popup.show();
+    return choice;
+}
+
+async function initializeAutomatic() {
+    if (automatic) return;
+    try {
+        automatic = new AutoSync({
+            request, options: filterOptions, persistDevice: () => getDeviceId(),
+            busy: () => operationInFlight || managerOpen,
+            makeBackup, backup: sendBackup, conflict: resolveAutoConflict,
+            events: { eventSource, eventTypes: event_types },
+            render: renderAuto, changed: refreshSnapshot,
+            failure: error => globalThis.toastr?.error(errorText(error)),
+            reload: () => { setOperationState('reloading', true); location.reload(); },
+        }, { account: getCurrentUserHandle() });
+        await automatic.start();
+        renderAuto(automatic.describe());
+    } catch (error) { globalThis.toastr?.error(errorText(error)); }
+}
+
+eventSource.on(event_types.APP_READY, initializeAutomatic);
 
 globalThis.DeviceSettingsSync = {
     syncNow: manualPull,
     pullFromServer: manualPull,
     pushCurrentDevice: manualPush,
-    getDiagnostics: () => ({ ...diagnostics }),
+    getDiagnostics: () => ({ ...diagnostics, automatic: automatic?.describe() }),
     openManager: showManager,
+    // Cooperative bridge for workers/custom transports: report lifecycle only.
+    beginModelActivity: () => automatic?.beginActivity(),
+    endModelActivity: id => automatic?.endActivity(id),
 };
 
 function mountPanel() {

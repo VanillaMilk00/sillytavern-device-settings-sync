@@ -2,21 +2,48 @@
 
 [繁體中文](README.md) · [简体中文](README.zh-CN.md) · [English](README.en.md)
 
-Manually synchronize portable browser settings and account/extension settings between devices using the same SillyTavern account.
+Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.5.2**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new backup API.
+Version **1.6.0**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new atomic commit API.
 
 ## Features
 
-- Manual upload/download with confirmation. Loading a page does not synchronize, poll or create backups.
+- Manual upload/download with confirmation. With both automatic switches off (the default), loading a page does not synchronize, poll or create backups.
+- Independently enable idle automatic upload and entry-time automatic download.
 - Five full localStorage backup slots shared by the logged-in account, newest first.
 - A WizTree-style storage tree and proportional treemap with search, multi-selection, sorting, folder/key export and removal.
 - JSON import with selectable preview, merge or bounded replacement, stale-preview detection and rollback on write failure.
 - Total and selected size estimates, local cleanup suggestions, desktop/mobile layouts, and English, Traditional Chinese and Simplified Chinese UI.
 
+## Independent automatic upload and download
+
+Both switches default **off** and require confirmation when enabled. Preferences belong to this website, account and browser device, and are excluded from ordinary sync. Disabling cancels unsent work; an already-sent request may finish.
+
+- **Upload only:** after the last observed model request succeeds, fails or is cancelled, wait 15 uninterrupted idle minutes. Each activity cycle uploads at most once; unchanged portable data uses no backup slot. Editing settings alone does not start a countdown.
+- **Download only:** check on a new page or manual reload, not when switching tabs. Apply remote-only changes; retain local-only changes. Successful changes reload once with a one-shot loop guard.
+- **Both:** operate independently, sharing account-scoped Web Locks across tabs. Active requests and open storage management defer work.
+- **Conflicts:** initial unequal data without a baseline, two-sided changes or changed remote versions before upload require a choice: keep local and upload once, use server data, or decide later. The first two authorize only that action, without enabling the other switch. Later pauses automatic writes.
+
+Automatic mode synchronizes **only localStorage allowed by the existing filters**. It does not re-save native account/extension settings or change manual sync. Every real write first creates a full server rescue backup, potentially including credentials, even in download-only mode and regardless of the optional management-backup switch. Backup or validation failures abort writes; failed downloads attempt rollback. Upload still reads the remote version with download disabled, without applying remote settings.
+
+Monitoring covers native generation events and known generation/Responses/Embedding/Rerank fetch/XHR endpoints, including accessible same-origin frames. Streaming waits for transfer completion, not headers; response bodies are not cloned or consumed. Prompts, responses, credentials and query parameters are not inspected. Requests with no confirmed completion block uploads. Cross-origin frames, workers, unknown transports and requests started before monitoring are observation limits. Extensions can report lifecycle through the main page without passing content:
+
+```js
+const activity = globalThis.DeviceSettingsSync.beginModelActivity();
+try {
+    await yourModelRequest(); // Wait until streaming finishes or is cancelled, not just headers.
+} finally {
+    globalThis.DeviceSettingsSync.endModelActivity(activity);
+}
+```
+
+Automatic operation requires a secure HTTPS/localhost context, Web Locks, Web Crypto and Resource Timing. Unsupported environments retain manual controls. Browser closure/suspension cannot guarantee timely uploads; no forced unload transmission occurs. Returning reconciles pending work; abandoned requests from closed tabs restart a conservative 15-minute wait, while live frozen tabs remain blocking. Transient failures retry after 1, 5 and 15 minutes, then pause; permission/version/conflict errors do not repeatedly retry. Use the panel's pause/resume/retry controls.
+
+Preferences, baselines and journals are internal keys: excluded from regular sync, included in full backups, skipped by default on restore. Management operations directly change only local data, but a pending/future automatic upload can subsequently upload those changes.
+
 ## Installation and upgrade
 
-Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. The 1.5.0 integration was tested in a separate SillyTavern 1.14.0 installation with Node.js 22 and Edge Chromium, including mobile-sized viewports. Previous sync versions were also tested on SillyTavern 1.18.0; this is not a claim of testing every host version or physical mobile browser. CI covers Node.js 18, 20 and 24.
+Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. Version 1.6.0 was tested in a separate SillyTavern 1.14.0 installation with Node.js 22 and Edge Chromium, including mobile-sized viewports and all three languages. Model transports use a local test server, not paid models. Previous sync versions were also tested on SillyTavern 1.18.0; this does not verify every model extension, host version or physical mobile browser. CI covers Node.js 18, 20 and 24.
 
 1. In Extensions → Install extension, enter:
 
@@ -125,6 +152,9 @@ All APIs use SillyTavern session authentication and CSRF protection. Under `/api
 - `GET /backups`: up to five summaries, without values.
 - `POST /backups`: `{ operationId, reason, archive }`; reasons are `upload`, `download`, `import`, `restore`, `delete`.
 - `GET /backups/:id`: a retained backup belonging to the current account.
+- `GET /health`: advertises `backups-v1` and `atomic-sync-v1`. Missing capabilities pause automatic work with an update/restart message.
+- `POST /commit`: `{ operationId, expectedRevision, deviceId, mutations }`, validated completely before an atomic write. Version or operation-ID conflicts return HTTP 409; identical retries are idempotent.
+- `GET /commits/:id`: account-private receipt recovery for lost responses. Receipts and values are written together and count toward the existing 5 MiB state limit. Existing per-value limits and manual APIs remain compatible.
 
 ### One-click analysis, capacity ceiling and extension hints (1.5.0)
 

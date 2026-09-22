@@ -60,12 +60,12 @@ export function mergeMutations(current, request, now = new Date().toISOString())
     for (const rawMutation of mutations) {
         const mutation = normalizeMutation(rawMutation);
         state.revision += 1;
-        state.entries[mutation.key] = {
+        Object.defineProperty(state.entries, mutation.key, { enumerable: true, configurable: true, writable: true, value: {
             ...(mutation.deleted ? { deleted: true } : { value: mutation.value, deleted: false }),
             revision: state.revision,
             updatedAt: now,
             deviceId,
-        };
+        } });
     }
     if (mutations.length) state.updatedAt = now;
     if (encoder.encode(JSON.stringify(state)).byteLength > MAX_STATE_BYTES) {

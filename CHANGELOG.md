@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.6.0 - 2026-09-23
+
+### 繁體中文
+
+- 新增獨立且預設關閉的自動上傳／自動下載開關；模型活動結束後閒置 15 分鐘上傳，進入頁面時檢查下載，僅同步可攜式 localStorage。
+- 加入串流生命週期、fetch／XHR、原生事件與同源 iframe 活動觀測，以及自訂傳輸回報介面；不讀提示詞、回應或憑證，不保證關閉瀏覽器後準時執行。
+- 共用跨分頁鎖、基準與版本衝突確認、強制完整救援備份、下載核對／復原、一次性重新載入保護，以及 1／5／15 分鐘有限重試。
+- 新增帳戶隔離的原子提交與提交收據 API；全部驗證後一次寫入、版本競爭 HTTP 409、重試去重，保留手動 API。
+- 更新三語介面與文件，保留 Android Termux 安裝指令；加入排程、復原、多分頁、串流與安全回歸測試。
+- **升級必須重啟 SillyTavern 伺服器插件。備份仍僅涵蓋 localStorage。未對正式 NAS 部署或執行寫入測試。**
+
+### 简体中文
+
+- 独立、默认关闭的自动上传／下载开关：模型活动结束后空闲 15 分钟上传，进入页面检查下载，只同步可移植 localStorage。
+- 流式 fetch／XHR、原生事件、同源 iframe 观测及活动回报接口，不读取提示词、响应或凭证。
+- 跨标签页锁、版本冲突选择、强制完整救援备份、下载核对／回滚、防刷新循环和 1／5／15 分钟有限重试。
+- 账户隔离的原子提交和收据 API，版本竞争返回 HTTP 409，重试去重；保留手动 API 和 Android 指令。
+- **更新后重启服务器插件；备份仅含 localStorage。不保证浏览器关闭后准时上传，未部署正式 NAS。**
+
+### English
+
+- Independent, default-off automatic upload/download: upload after 15 idle minutes following model activity; check downloads on entry. Only portable localStorage is automatically synchronized.
+- Observe streaming fetch/XHR, native generation events and accessible same-origin frames; expose a lifecycle bridge without inspecting prompts, responses or credentials.
+- Add cross-tab locking, baseline/version conflict choices, mandatory full rescue backups, guarded download rollback, reload-loop prevention and bounded 1/5/15-minute retries.
+- Add account-private atomic commits and receipts, HTTP 409 version conflicts and idempotent retries while retaining manual APIs. Update all three languages and preserve Android instructions.
+- **Restart the server plugin after upgrading. Backups contain localStorage only. Closed-browser timing is not guaranteed. No production NAS deployment or mutation tests were performed.**
+
 ## 1.5.2 - 2026-09-22
 
 - 繁體中文：匯入、還原及移除前自動備份改為預設開啟；保留已儲存的使用者選擇，舊版已關閉者可手動開啟。

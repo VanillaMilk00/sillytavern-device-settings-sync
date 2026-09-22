@@ -56,5 +56,31 @@ try {
     assert.equal((await huge.json()).code, 'archiveTooLarge');
     assert.deepEqual(await (await admin.context.get(base + '/backups')).json(), before);
     pass('invalid, partial and >32 MiB requests leave the prior history untouched');
+    assert.equal((await anonymous.post(base + '/commit', {})).status(), 403);
+    assert.equal((await anonymous.context.get(base + '/commits/test_receipt')).status(), 403);
+    assert.equal((await admin.context.post(base + '/commit', { data: {} })).status(), 403);
+    assert.equal((await admin.context.post(base + '/commit', { headers: { 'x-csrf-token': 'invalid' }, data: {} })).status(), 403);
+    pass('atomic commit and receipt routes retain login and CSRF protection');
+    const current = await (await other.context.get(base + '/state')).json();
+    const commit = { operationId: 'atomic_' + Date.now(), deviceId: 'qa_atomic_device', expectedRevision: current.revision,
+        mutations: [{ key: 'qa:atomic', value: 'first' }] };
+    const race = await Promise.all([other.post(base + '/commit', commit), other.post(base + '/commit', {
+        ...commit, operationId: commit.operationId + '_race', mutations: [{ key: 'qa:atomic', value: 'racer' }],
+    })]);
+    assert.deepEqual(race.map(response => response.status()).sort(), [200, 409]);
+    const winnerIndex = race.findIndex(response => response.status() === 200);
+    const winner = await race[winnerIndex].json();
+    const winnerPayload = winnerIndex === 0 ? commit : { ...commit, operationId: commit.operationId + '_race', mutations: [{ key: 'qa:atomic', value: 'racer' }] };
+    const replay = await (await other.post(base + '/commit', winnerPayload)).json();
+    assert.equal(replay.revision, winner.revision); assert.equal(replay.replayed, true);
+    assert.equal((await admin.context.get(base + '/commits/' + winner.operationId)).status(), 404);
+    assert.equal((await other.context.get(base + '/commits/' + winner.operationId)).status(), 200);
+    pass('concurrent devices get one atomic winner, an idempotent receipt and account isolation');
+    const committed = await (await other.context.get(base + '/state')).json();
+    assert.equal((await other.post(base + '/commit', { ...commit, operationId: commit.operationId + '_bad', expectedRevision: committed.revision,
+        mutations: [{ key: 'qa:atomic', value: 'must-not-appear' }, { key: 'too-big', value: 'x'.repeat(256 * 1024 + 1) }],
+    })).status(), 400);
+    assert.deepEqual(await (await other.context.get(base + '/state')).json(), committed);
+    pass('invalid later mutations never expose a partially committed state');
     console.log('Completed ' + passed + ' server security checks. Disposable account: ' + handle);
 } finally { await Promise.all(contexts.map(context => context.dispose())); }

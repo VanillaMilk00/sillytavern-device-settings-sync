@@ -21,11 +21,11 @@ test('pre-change backups default on without overriding a saved choice', () => {
 test('does not start synchronization when the extension loads', () => {
     assert.doesNotMatch(source, /setInterval\s*\(/u);
     assert.doesNotMatch(source, /Storage\.prototype\.(?:setItem|removeItem|clear)\s*=/u);
-    assert.doesNotMatch(source, /eventSource\.(?:on|makeLast)\s*\(/u);
+    assert.deepEqual([...source.matchAll(/eventSource\.on\(([^,]+)/gu)].map(match => match[1]), ['event_types.APP_READY']);
     assert.doesNotMatch(source, /(?:poll|bootstrap|touchAccountSettings)\s*\(\s*\)\s*;/u);
 });
 
-test('network synchronization is reachable only from manual actions', () => {
+test('manual synchronization remains reachable from its explicit controls', () => {
     assert.match(source, /async function manualPull/u);
     assert.match(source, /async function manualPush/u);
     assert.match(source, /dss_pull[^]*manualPull/u);
@@ -42,7 +42,7 @@ test('asks for confirmation before either manual synchronization action', () => 
 
 test('publishes the verified SillyTavern and Node.js compatibility floor', () => {
     assert.equal(manifest.minimum_client_version, '1.14.0');
-    assert.equal(manifest.version, '1.5.2');
+    assert.equal(manifest.version, '1.6.0');
     assert.equal(packageJson.engines.node, '>=18');
     assert.equal(serverPackage.engines.node, '>=18');
 });

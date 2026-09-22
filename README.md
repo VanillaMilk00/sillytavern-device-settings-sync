@@ -2,13 +2,14 @@
 
 [繁體中文](README.md) · [简体中文](README.zh-CN.md) · [English](README.en.md)
 
-讓同一個 SillyTavern 帳戶在手機、桌面及其他裝置之間，手動同步擴充設定與可攜式瀏覽器設定。
+讓同一個 SillyTavern 帳戶在手機、桌面及其他裝置之間，手動同步設定，並可選擇自動同步可攜式瀏覽器設定。
 
-目前版本：**1.5.2**。升級後必須**重啟 SillyTavern 伺服器插件**；僅重新整理瀏覽器不會載入新的備份 API。
+目前版本：**1.6.0**。升級後必須**重啟 SillyTavern 伺服器插件**；僅重新整理瀏覽器不會載入新的原子提交 API。
 
 ## 功能
 
-- 純手動模式：載入頁面時不下載、不上傳、不輪詢。
+- 預設純手動模式：兩個自動開關皆關閉時，載入頁面不下載、不上傳、不輪詢。
+- 自動上傳、自動下載分別開啟；15 分鐘模型請求閒置上傳，以及進入頁面時的下載檢查互不綁定。
 - 「上傳本機設定」把目前裝置視為來源，保存 SillyTavern 帳戶／擴充設定及可攜式 `localStorage`。
 - 「從伺服器同步」下載可攜式設定，然後重新載入頁面以完整套用。
 - 執行上傳或下載前會顯示確認視窗，避免誤觸造成設定被覆蓋。
@@ -21,6 +22,34 @@
 - 顯示完整用量估算、選取容量與清理建議；不自動刪除資料。
 
 第三方擴充存於 `localStorage` 的 OAuth token、登入憑證及 API 憑證會同步。瀏覽器 HttpOnly Cookie 與 SillyTavern 登入 Cookie 無法由擴充讀取，所以新裝置仍需先登入 SillyTavern 一次。
+
+## 自動上傳與下載（可分別啟用）
+
+在擴充面板分別勾選「啟用自動上傳」「啟用自動下載同步」，啟用時需確認。預設皆關閉，偏好依網站、登入帳戶及瀏覽器裝置保存，不跟隨一般同步傳到其他裝置。停用取消尚未送出的工作；已送出的請求可能完成。
+
+- **僅上傳**：最後一個已觀測的模型請求成功、失敗或取消後，連續 15 分鐘沒有新活動才嘗試上傳，每輪最多成功一次。沒有可攜式資料變更就略過，不占備份槽。單純修改設定不啟動倒數。
+- **僅下載**：開啟新頁面／手動重新整理時檢查；切回分頁不觸發下載。只有伺服器變更才自動套用，本機單獨變更會保留。真正套用後自動重新載入，以一次性標記避免循環。
+- **兩者皆開**：各自運作，但共用跨分頁操作鎖。API 活動中或管理視窗開啟時延後執行。
+- **衝突**：首次無基準且資料不同、雙方皆有變更，或上傳前遠端版本改變時，詢問「保留本機並上傳」「使用伺服器資料」「稍後處理」。前兩者只授權當次動作，不啟用另一開關；稍後處理會暫停自動寫入。
+
+自動模式**只處理符合既有排除規則的 localStorage**，不再次保存整份酒館帳戶／擴充設定，不改變原生保存或手動同步行為。每次真正寫入前，強制保存完整 localStorage 救援備份（可能包含憑證），不受管理視窗的可選備份開關影響。備份失敗或核對失敗即停止；下載寫入失敗會嘗試復原。上傳即使未開下載，也必須讀取遠端版本，但不會因此套用遠端資料。
+
+已知模型端點的 fetch／XHR、原生生成事件及可存取的同源 iframe 會參與活動計數，涵蓋生成、Responses、Embedding／Rerank。串流等待傳輸完成，不以回應標頭當結束，不複製或消耗回應串流。不檢視提示詞、回應內容、憑證或查詢參數；只保留必要的請求生命週期中繼資料。無法確認結束的請求會阻擋自動上傳，不逕自當作閒置。
+
+跨來源 iframe、Worker、未知傳輸或未在觀測啟用後發出的請求無法完整觀測；擴充可透過主頁的生命週期橋接介面回報（不傳提示詞或回應）：
+
+```js
+const activity = globalThis.DeviceSettingsSync.beginModelActivity();
+try {
+    await yourModelRequest(); // 必須等到串流結束／取消，而不是只等標頭
+} finally {
+    globalThis.DeviceSettingsSync.endModelActivity(activity);
+}
+```
+
+自動功能需要 HTTPS／localhost、安全內容、Web Locks、Web Crypto 與 Resource Timing；缺少可靠協調能力時不可啟用，手動功能仍可使用。關閉瀏覽器不保證準時上傳，也不在離開頁面時強行傳輸；返回後核對待辦與時間。關閉的分頁留下未結束活動時，保守重新等待 15 分鐘；仍存活但休眠的分頁會繼續阻擋。暫時網路失敗最多在 1、5、15 分鐘後重試，永久錯誤／衝突暫停，面板提供暫停及重試。
+
+偏好、基準、提交收據索引與排程為內部資料：一般同步排除，完整備份包含，還原預設跳過。管理操作仍只直接修改本機；若有待辦自動上傳，之後的活動輪次可能將這些變更上傳。
 
 ## 介面語言
 
@@ -44,7 +73,7 @@
 
 需要 SillyTavern 1.14.0 或更新版本、Node.js 18 或更新版本，以及已啟用的 Server Plugins。
 
-1.5.0 新功能已在獨立的 SillyTavern 1.14.0 安裝、Node.js 22 與 Edge Chromium 驗證前後端整合、桌面／手機尺寸及三語介面。既有同步功能曾驗證 SillyTavern 1.18.0；本次不宣稱對所有版本與實體手機完成實機測試。CI 保留 Node.js 18、20、24 測試矩陣。
+1.6.0 已在獨立的 SillyTavern 1.14.0 安裝、Node.js 22 與 Edge Chromium 驗證前後端整合、桌面／手機尺寸及三語介面；模型傳輸使用本機測試伺服器，未呼叫付費模型。既有同步功能曾驗證 SillyTavern 1.18.0；本次不宣稱所有模型擴充、酒館版本或實體手機均已驗證。CI 保留 Node.js 18、20、24 測試矩陣。
 
 1.12.13 至 1.13.x 的官方原始碼雖然已具備本擴充所需 API，但尚未完成實機驗證，因此目前不列入正式支援。1.12.12 或更早版本缺少完整的工作階段期限或 CSRF 介面，不支援。
 
@@ -126,7 +155,7 @@ docker exec sillytavern node /home/node/app/public/scripts/extensions/third-part
 
 若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，重啟容器後再試；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
 
-若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.5.0 後再重啟伺服器。
+若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.6.0 後再重啟伺服器。
 
 ## 使用
 
@@ -199,6 +228,9 @@ JSON 檔案／備份請求上限為 **32 MiB**，超限拒絕且不修改既有�
 - `GET /backups`：最多五份摘要，不含設定值。
 - `POST /backups`：`{ operationId, reason, archive }`；`reason` 為 `upload`、`download`、`import`、`restore` 或 `delete`。
 - `GET /backups/:id`：僅讀取目前帳戶保留中的指定快照。
+- `GET /health`：能力標記包含 `backups-v1`、`atomic-sync-v1`；舊後端無此能力時自動功能停止並提示更新／重啟。
+- `POST /commit`：`{ operationId, expectedRevision, deviceId, mutations }`，全部驗證後原子提交；版本競爭或識別碼內容不一致回傳 HTTP 409，同識別碼重試不重複套用。
+- `GET /commits/:id`：讀取本帳戶提交收據，用於恢復遺失回應。收據與資料一同寫入，計入既有 5 MiB 同步檔上限；單值限制與手動 API 相容性不變。
 
 ## 開發與測試
 

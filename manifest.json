@@ -1,12 +1,12 @@
 {
-  "display_name": "跨裝置設定同步（手動）",
+  "display_name": "跨裝置設定同步",
   "loading_order": -10000,
   "requires": [],
   "optional": [],
   "js": "index.js",
   "css": "style.css",
   "author": "VanillaMilk00",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "minimum_client_version": "1.14.0",
   "i18n": {
     "zh-cn": "locales/zh-cn.json",

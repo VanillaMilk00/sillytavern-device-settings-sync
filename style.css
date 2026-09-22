@@ -41,6 +41,11 @@
     min-width: 0;
     width: 100%;
 }
+#dss_auto { padding: 8px; border: 1px solid var(--SmartThemeBorderColor, #888); border-radius: 6px; }
+#dss_auto label { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+#dss_auto_status { white-space: pre-line; font-size: .85em; }
+#dss_auto .dss_note { font-size: .8em; opacity: .8; }
+#device_settings_sync_panel [hidden] { display: none !important; }
 .popup.dss_dialog { width: min(1280px, 96vw); max-width: 96vw; }
 .dss_manager [hidden] { display: none !important; }
 
