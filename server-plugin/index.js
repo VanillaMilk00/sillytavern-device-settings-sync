@@ -116,7 +116,7 @@ export async function init(router) {
     installSillyTavernSecurity(router);
 
     router.get('/health', (_request, response) => {
-        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.5.1', capabilities: ['backups-v1'] });
+        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.5.2', capabilities: ['backups-v1'] });
     });
 
     router.get('/backups', async (request, response) => {

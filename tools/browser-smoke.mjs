@@ -48,7 +48,7 @@ try {
         localStorage.setItem('tools_debug', 'z'.repeat(10000));
         localStorage.setItem('ui.theme', 'dark');
         const { extension_settings } = await import('/scripts/extensions.js');
-        extension_settings.deviceSettingsSync.backupBeforeChanges = false;
+        delete extension_settings.deviceSettingsSync.backupBeforeChanges;
     });
     await page.locator('#dss_push').evaluate(node => node.click());
     await page.locator('dialog[open] .popup-button-cancel').last().click();
@@ -127,6 +127,7 @@ try {
     await page.evaluate(() => { void DeviceSettingsSync.openManager(); });
     const manager = page.locator('.dss_manager').first();
     await manager.waitFor();
+    assert.equal(await manager.getByRole('checkbox', { name: 'Also back up before importing, restoring or removing local data', exact: true }).isChecked(), true);
     assert.equal(requests.length, 0);
     assert.equal(await manager.getByRole('button', { name: 'Reload to apply', exact: true }).isVisible(), false);
     const dialog = page.locator('dialog[open]').last();
@@ -209,8 +210,16 @@ try {
     await importFile({ 'qa:new': '你好😀', 'ui.theme': '', sillytavern_settings_sync_device_id: 'should-not-copy' });
     await applyImport();
     assert.deepEqual(await page.evaluate(() => [localStorage.getItem('qa:new'), localStorage.getItem('ui.theme'), localStorage.getItem('sillytavern_settings_sync_device_id')]), ['你好😀', '', oldId]);
+    assert.deepEqual(requests, ['POST ' + base + '/backups']);
+    const importRescue = (await api('/backups')).body[0];
+    assert.equal((await api('/backups/' + importRescue.id)).body.entries.find(item => item.key === 'ui.theme').value, 'dark');
+    await manager.getByRole('checkbox', { name: 'Also back up before importing, restoring or removing local data', exact: true }).uncheck();
+    requests.length = 0;
+    await importFile({ 'qa:new': 'manual opt-out' });
+    await applyImport();
+    assert.equal(await page.evaluate(() => localStorage.getItem('qa:new')), 'manual opt-out');
     assert.equal(requests.length, 0);
-    pass('plain JSON merge, Unicode, empty strings, internal-key protection; optional backup defaults off');
+    pass('imports back up by default, preserve Unicode/internal keys, and respect an explicit opt-out');
 
     // A partial archive can replace only its original prefix, not the rest of localStorage.
     const partial = { ...archive, scope: { kind: 'prefix', prefix: 'qa:' }, entries: [{ key: 'qa:settings', value: 'replaced' }] };

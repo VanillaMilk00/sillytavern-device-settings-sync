@@ -4,7 +4,7 @@
 
 Manually synchronize portable browser settings and account/extension settings between devices using the same SillyTavern account.
 
-Version **1.5.1**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new backup API.
+Version **1.5.2**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new backup API.
 
 ## Features
 
@@ -77,7 +77,7 @@ Use **Upload local settings** on the source device, then **Sync from server** on
 
 Both actions create a full snapshot of the **current device's localStorage before changes**, after confirmation. Cancel creates nothing; backup failure aborts sync; a later sync failure keeps the rescue backup. The sixth successful backup evicts the oldest, using atomic publication and per-account serialization. A transport retry uses the same operation ID and does not consume another slot, even after eviction. The index retains operation IDs, backup IDs and digest receipts without setting values for deduplication across eviction and server restarts; only five snapshot contents are retained.
 
-Open **Manage localStorage → Backups** to fetch the list. Slots show time, device, reason, key count, estimated size and JSON size, with browse/export/restore actions. Contents load only when selected. The option to also back up before importing, restoring or removing data is **off by default**.
+Open **Manage localStorage → Backups** to fetch the list. Slots show time, device, reason, key count, estimated size and JSON size, with browse/export/restore actions. Contents load only when selected. The option to also back up before importing, restoring or removing data is **on by default**. Saved preferences are preserved; if an older installation has it disabled, enable it manually in the manager.
 
 **These backups contain localStorage only**—not account settings files, server chat files, characters, cookies, sessionStorage or IndexedDB. They include localStorage caches, history, large values and credentials without ordinary sync exclusions. Regular cross-device sync continues to apply its existing exclusion rules and size limits.
 

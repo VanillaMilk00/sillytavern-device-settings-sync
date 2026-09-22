@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.2 - 2026-09-22
+
+- 繁體中文：匯入、還原及移除前自動備份改為預設開啟；保留已儲存的使用者選擇，舊版已關閉者可手動開啟。
+- 简体中文：导入、恢复及删除前自动备份默认开启；保留已保存的用户选择，旧版已关闭者可手动开启。
+- English: Enable pre-import/restore/removal backups by default while preserving saved preferences; previously disabled installations can opt in manually.
+
 ## 1.5.1 - 2026-09-22
 
 - 繁體中文：桌面右側容量方塊圖隨左側列表伸展並對齊底部；手機維持上下排列。加入展開、搜尋及視窗尺寸變更的等高回歸檢查。
