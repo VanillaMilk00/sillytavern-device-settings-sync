@@ -17,6 +17,8 @@ const {
     setUserDataMiddleware,
 } = await import(pathToFileURL(path.resolve(process.cwd(), 'src/users.js')).href);
 import { createInitialState, MAX_STATE_BYTES, mergeMutations, normalizeState, touchSettings } from './state.js';
+import { BackupStore } from './backups.js';
+import { StorageError } from '../lib/storage-model.js';
 
 const FILE_NAME = 'device-settings-sync.json';
 const queues = new Map();
@@ -72,6 +74,10 @@ function serialize(root, operation) {
 }
 
 function sendError(response, error) {
+    if (error instanceof StorageError) {
+        const status = error.code === 'backupNotFound' ? 404 : error.code === 'backupConflict' ? 409 : error.code === 'archiveTooLarge' ? 413 : 400;
+        return response.status(status).json({ code: error.code });
+    }
     const status = error instanceof TypeError || error instanceof RangeError ? 400 : 500;
     if (status === 500) console.error('[device-settings-sync]', error);
     response.status(status).json({ error: status === 500 ? 'Settings sync failed' : error.message });
@@ -88,7 +94,6 @@ function installSillyTavernSecurity(router) {
         maxAge: getSessionCookieAge(),
         secret: getCookieSecret(globalThis.DATA_ROOT),
     }));
-    router.use(express.json({ limit: '6mb' }));
     router.use(setUserDataMiddleware);
     router.use(requireLoginMiddleware);
 
@@ -103,13 +108,33 @@ function installSillyTavernSecurity(router) {
         });
         router.use(protection.csrfSynchronisedProtection);
     }
+    router.use('/backups', express.json({ limit: '32mb' }));
+    router.use(express.json({ limit: '6mb' }));
 }
 
 export async function init(router) {
     installSillyTavernSecurity(router);
 
     router.get('/health', (_request, response) => {
-        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.3.1' });
+        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.4.0', capabilities: ['backups-v1'] });
+    });
+
+    router.get('/backups', async (request, response) => {
+        try {
+            response.set('Cache-Control', 'no-store').json(await new BackupStore(getUserRoot(request)).list());
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.post('/backups', async (request, response) => {
+        try {
+            response.set('Cache-Control', 'no-store').json(await new BackupStore(getUserRoot(request)).create(request.body));
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.get('/backups/:id', async (request, response) => {
+        try {
+            response.set('Cache-Control', 'no-store').json(await new BackupStore(getUserRoot(request)).get(request.params.id));
+        } catch (error) { sendError(response, error); }
     });
 
     router.get('/state', async (request, response) => {
@@ -149,5 +174,11 @@ export async function init(router) {
         } catch (error) {
             sendError(response, error);
         }
+    });
+
+    router.use((error, _request, response, next) => {
+        if (error.type === 'entity.too.large') return response.status(413).json({ code: 'archiveTooLarge' });
+        if (error.type === 'entity.parse.failed') return response.status(400).json({ code: 'invalidArchive' });
+        return next(error);
     });
 }

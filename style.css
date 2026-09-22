@@ -35,3 +35,62 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
+
+.dss_manager {
+    text-align: start;
+    min-width: 0;
+    width: 100%;
+}
+.popup.dss_dialog { width: min(1280px, 96vw); max-width: 96vw; }
+.dss_manager [hidden] { display: none !important; }
+
+.dss_manager h3, .dss_manager h4 { margin: 8px 0; }
+.dss_manager .dss_toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin: 8px 0;
+}
+.dss_manager .menu_button { width: auto; margin: 0; min-height: 32px; }
+.dss_manager .dss_toolbar input[type="search"] { flex: 1 1 180px; min-width: 100px; }
+.dss_manager .dss_toolbar select { width: auto; max-width: 100%; }
+.dss_manager .dss_check { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+.dss_manager .dss_check input, .dss_manager .dss_tree input { width: 16px; min-width: 16px; margin: 0; }
+.dss_manager .dss_note { font-size: .85em; opacity: .8; margin: 8px 0; }
+.dss_manager .dss_summary { font-variant-numeric: tabular-nums; margin: 10px 0; }
+.dss_manager .dss_feedback:empty { display: none; }
+.dss_manager .dss_error { color: var(--SmartThemeQuoteColor, #ffba71); }
+.dss_manager .dss_active { outline: 2px solid var(--SmartThemeQuoteColor, #e4aa68); }
+.dss_explorer_layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
+.dss_tree_scroll { overflow: auto; max-height: 52vh; border: 1px solid var(--SmartThemeBorderColor, #888); border-radius: 6px; }
+.dss_tree { width: 100%; border-collapse: collapse; font-size: .85em; }
+.dss_tree th { position: sticky; top: 0; z-index: 1; background: var(--SmartThemeBlurTintColor, #222); }
+.dss_tree th, .dss_tree td { text-align: start; padding: 6px; border-bottom: 1px solid var(--SmartThemeBorderColor, #555); }
+.dss_tree td:nth-child(2), .dss_tree td:nth-child(3), .dss_tree td:nth-child(4) { white-space: nowrap; }
+.dss_tree_name { display: flex; gap: 6px; align-items: center; min-width: 140px; }
+.dss_tree_name .menu_button { border: 0; background: none; text-align: start; overflow-wrap: anywhere; word-break: break-word; box-shadow: none; }
+.dss_tree .dss_selected { background: color-mix(in srgb, var(--SmartThemeQuoteColor, #e4aa68) 18%, transparent); }
+.dss_map_panel { min-width: 0; }
+.dss_map_panel > button { max-width: 100%; overflow-wrap: anywhere; }
+.dss_treemap { position: relative; height: 360px; width: 100%; margin-top: 8px; background: #222; border-radius: 6px; overflow: hidden; }
+.dss_treemap .dss_map_box {
+    position: absolute; margin: 0; min-width: 0; min-height: 0;
+    padding: 4px; overflow: hidden; border: 1px solid #171b21; border-radius: 0;
+    background: hsl(var(--tile-hue) 45% 30%); color: #fff; font-size: 12px;
+    text-align: start; white-space: pre-line; overflow-wrap: anywhere; cursor: pointer;
+}
+.dss_treemap .dss_map_box:hover { filter: brightness(1.2); }
+.dss_treemap .dss_map_box.dss_selected { box-shadow: inset 0 0 0 3px #fff; }
+.dss_treemap .dss_map_box:focus-visible { outline: 3px solid #ffed92; outline-offset: -3px; }
+.dss_backup_card, .dss_advice { padding: 12px; margin: 10px 0; border: 1px solid var(--SmartThemeBorderColor, #888); border-radius: 8px; overflow-wrap: anywhere; }
+.dss_advice > span { margin-inline-start: 12px; }
+.dss_deletion_list { max-height: 160px; overflow: auto; overflow-wrap: anywhere; }
+.dss_pending > .dss_toolbar, .dss_pending > .dss_check { pointer-events: none; opacity: .6; }
+
+@media (max-width: 760px) {
+    .dss_explorer_layout { grid-template-columns: minmax(0, 1fr); }
+    .dss_tree_scroll { max-height: 36vh; }
+    .dss_treemap { height: 220px; }
+    .dss_manager .dss_toolbar .menu_button { flex: 1 1 auto; }
+}
