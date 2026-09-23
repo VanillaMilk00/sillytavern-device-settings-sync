@@ -82,5 +82,27 @@ try {
     })).status(), 400);
     assert.deepEqual(await (await other.context.get(base + '/state')).json(), committed);
     pass('invalid later mutations never expose a partially committed state');
+    assert.equal((await anonymous.context.get(base + '/full-state')).status(), 403);
+    assert.equal((await anonymous.post(base + '/full-commit', {})).status(), 403);
+    assert.equal((await admin.context.post(base + '/full-commit', { data: {} })).status(), 403);
+    pass('full-storage routes require login and CSRF');
+    const full = { operationId: 'full_' + Date.now(), deviceId: 'qa_full_device', expectedRevision: 0,
+        entries: [{ key: 'history:中文', value: '大'.repeat(140000) }, { key: '', value: '' }] };
+    const firstFull = await other.post(base + '/full-commit', full);
+    assert.equal(firstFull.status(), 200);
+    const fullReceipt = await firstFull.json();
+    assert.equal((await other.post(base + '/full-commit', full)).status(), 200);
+    assert.equal((await admin.context.get(base + '/full-commits/' + full.operationId)).status(), 404);
+    assert.equal((await other.context.get(base + '/full-commits/' + full.operationId)).status(), 200);
+    const fullState = await (await other.context.get(base + '/full-state')).json();
+    assert.equal(fullState.entries['history:中文'].length, 140000);
+    assert.equal(fullState.entries[''], '');
+    assert.equal(fullState.revision, fullReceipt.revision);
+    assert.equal((await other.post(base + '/full-commit', { ...full, operationId: full.operationId + '_race' })).status(), 409);
+    assert.equal((await other.post(base + '/full-commit', { ...full, operationId: full.operationId + '_invalid',
+        expectedRevision: fullState.revision, entries: [...full.entries, { key: 'sillytavern_settings_sync_device_id', value: 'bad' }],
+    })).status(), 400);
+    assert.deepEqual(await (await other.context.get(base + '/full-state')).json(), fullState);
+    pass('full snapshots keep large values, receipt replay and account isolation without partial writes');
     console.log('Completed ' + passed + ' server security checks. Disposable account: ' + handle);
 } finally { await Promise.all(contexts.map(context => context.dispose())); }

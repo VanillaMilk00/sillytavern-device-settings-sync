@@ -4,7 +4,7 @@
 
 讓同一個 SillyTavern 帳戶在手機、桌面及其他裝置之間，手動同步設定，並可選擇自動同步可攜式瀏覽器設定。
 
-目前版本：**1.6.0**。升級後必須**重啟 SillyTavern 伺服器插件**；僅重新整理瀏覽器不會載入新的原子提交 API。
+目前版本：**1.7.0**。升級後必須**重啟 SillyTavern 伺服器插件**；僅重新整理瀏覽器不會載入完整同步 API。
 
 ## 功能
 
@@ -23,6 +23,14 @@
 
 第三方擴充存於 `localStorage` 的 OAuth token、登入憑證及 API 憑證會同步。瀏覽器 HttpOnly Cookie 與 SillyTavern 登入 Cookie 無法由擴充讀取，所以新裝置仍需先登入 SillyTavern 一次。
 
+## 設定選單與完整 localStorage 同步
+
+在擴充面板按「設定」，可調整自動上傳、自動下載、匯入／還原／移除前備份、額外排除鍵，以及預設關閉的「同步完整 localStorage」。完整模式開關依目前網站、帳戶與瀏覽器裝置保留，不會傳到其他裝置；切換時需由各裝置自行決定。設定選單關閉時仍能從面板查看狀態與手動同步。
+
+完整模式同時作用於手動和自動上傳／下載。它包含快取、歷史、草稿、大型值與可能的憑證；同步器內部鍵（包括裝置識別碼及排程）仍留在本機。完整模式與一般模式使用不同的帳戶私有伺服器同步檔，不會在切換時悄悄以其中一份覆蓋另一份；首次資料不同時，自動操作會詢問來源。完整同步檔上限 32 MiB JSON，超限拒絕且保留既有伺服器資料。真正套用前仍會先建立完整本機救援備份；下載會以完整快照取代本機非內部鍵，失敗時嘗試復原。
+
+這是 **localStorage** 模式，不包含 IndexedDB、Cookie 或其他瀏覽器儲存區。不同裝置的 localStorage 配額可能不同，完整資料在來源裝置可用，也可能無法寫入容量較小的目標裝置。額外排除規則與一般同步的單鍵上限只適用於一般模式。
+
 ## 自動上傳與下載（可分別啟用）
 
 在擴充面板分別勾選「啟用自動上傳」「啟用自動下載同步」，啟用時需確認。預設皆關閉，偏好依網站、登入帳戶及瀏覽器裝置保存，不跟隨一般同步傳到其他裝置。停用取消尚未送出的工作；已送出的請求可能完成。
@@ -32,7 +40,7 @@
 - **兩者皆開**：各自運作，但共用跨分頁操作鎖。API 活動中或管理視窗開啟時延後執行。
 - **衝突**：首次無基準且資料不同、雙方皆有變更，或上傳前遠端版本改變時，詢問「保留本機並上傳」「使用伺服器資料」「稍後處理」。前兩者只授權當次動作，不啟用另一開關；稍後處理會暫停自動寫入。
 
-自動模式**只處理符合既有排除規則的 localStorage**，不再次保存整份酒館帳戶／擴充設定，不改變原生保存或手動同步行為。每次真正寫入前，強制保存完整 localStorage 救援備份（可能包含憑證），不受管理視窗的可選備份開關影響。備份失敗或核對失敗即停止；下載寫入失敗會嘗試復原。上傳即使未開下載，也必須讀取遠端版本，但不會因此套用遠端資料。
+自動模式依設定處理一般或完整 localStorage，不再次保存整份酒館帳戶／擴充設定，不改變原生保存或手動同步行為。每次真正寫入前，強制保存完整 localStorage 救援備份（可能包含憑證），不受管理視窗的可選備份開關影響。備份失敗或核對失敗即停止；下載寫入失敗會嘗試復原。上傳即使未開下載，也必須讀取遠端版本，但不會因此套用遠端資料。
 
 已知模型端點的 fetch／XHR、原生生成事件及可存取的同源 iframe 會參與活動計數，涵蓋生成、Responses、Embedding／Rerank。串流等待傳輸完成，不以回應標頭當結束，不複製或消耗回應串流。不檢視提示詞、回應內容、憑證或查詢參數；只保留必要的請求生命週期中繼資料。無法確認結束的請求會阻擋自動上傳，不逕自當作閒置。
 
@@ -155,7 +163,7 @@ docker exec sillytavern node /home/node/app/public/scripts/extensions/third-part
 
 若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，重啟容器後再試；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
 
-若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.6.0 後再重啟伺服器。
+若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.7.0 後再重啟伺服器。
 
 ## 使用
 
@@ -228,9 +236,10 @@ JSON 檔案／備份請求上限為 **32 MiB**，超限拒絕且不修改既有�
 - `GET /backups`：最多五份摘要，不含設定值。
 - `POST /backups`：`{ operationId, reason, archive }`；`reason` 為 `upload`、`download`、`import`、`restore` 或 `delete`。
 - `GET /backups/:id`：僅讀取目前帳戶保留中的指定快照。
-- `GET /health`：能力標記包含 `backups-v1`、`atomic-sync-v1`；舊後端無此能力時自動功能停止並提示更新／重啟。
+- `GET /health`：能力標記包含 `backups-v1`、`atomic-sync-v1`、`full-storage-v1`；舊後端缺少所需能力時停止相關功能並提示更新／重啟。
 - `POST /commit`：`{ operationId, expectedRevision, deviceId, mutations }`，全部驗證後原子提交；版本競爭或識別碼內容不一致回傳 HTTP 409，同識別碼重試不重複套用。
 - `GET /commits/:id`：讀取本帳戶提交收據，用於恢復遺失回應。收據與資料一同寫入，計入既有 5 MiB 同步檔上限；單值限制與手動 API 相容性不變。
+- `GET /full-state`、`POST /full-commit`、`GET /full-commits/:id`：完整模式的獨立快照、原子版本提交及重試收據；最多 32 MiB JSON，與一般同步及五格救援備份分開。
 
 ## 開發與測試
 

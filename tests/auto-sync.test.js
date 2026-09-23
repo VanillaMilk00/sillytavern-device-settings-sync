@@ -5,6 +5,7 @@ import { AutoSync } from '../lib/auto-sync.js';
 import { IDLE_MS, RETRY_MS } from '../lib/auto-core.js';
 import { createInitialState, mergeMutations } from '../server-plugin/state.js';
 import { commitMutations, findCommit } from '../server-plugin/commit.js';
+import { commitFullState, fullReceipt, initialFullState } from '../server-plugin/full-state.js';
 import { StorageError } from '../lib/storage-model.js';
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
@@ -40,31 +41,41 @@ function fixture() {
     };
     const calls = [];
     let server = mergeMutations(createInitialState(), { deviceId: 'device_seed', seed: true, mutations: [{ key: 'theme', value: 'base' }] });
-    const f = { storage, win, calls, timers, held, reloads: 0, observed: 0, backups: 0, choice: 'later', busy: false,
+    let full = commitFullState(initialFullState(), { operationId: 'initial_full_123', deviceId: 'device_seed', expectedRevision: 0,
+        entries: [{ key: 'theme', value: 'base' }] }).state;
+    const f = { storage, win, calls, timers, held, reloads: 0, observed: 0, backups: 0, choice: 'later', busy: false, fullMode: false,
         advance(ms) { now += ms; }, get now() { return now; }, get server() { return server; },
-        remote(value) { server = mergeMutations(server, { deviceId: 'device_other', mutations: [{ key: 'theme', value }] }); },
+        remote(value) {
+            if (f.fullMode) full = commitFullState(full, { operationId: 'remote_full_' + (++counter), deviceId: 'device_other',
+                expectedRevision: full.revision, entries: [{ key: 'theme', value }] }).state;
+            else server = mergeMutations(server, { deviceId: 'device_other', mutations: [{ key: 'theme', value }] });
+        },
+        get fullServer() { return full; },
     };
     const api = {
-        async request(path, options) {
+        async request(path, options, receiptFullStorage) {
             calls.push(path);
             if (f.requestFailure) throw f.requestFailure;
-            if (path === '/health') return { capabilities: f.oldBackend ? [] : ['atomic-sync-v1'] };
-            if (path === '/state') return structuredClone(server);
+            if (path === '/health') return { capabilities: f.oldBackend ? [] : ['atomic-sync-v1', 'full-storage-v1'] };
+            if (path === '/state') return f.fullMode ? { ...structuredClone(full),
+                entries: Object.fromEntries(Object.entries(full.entries).map(([key, value]) => [key, { value, deleted: false }])) }
+                : structuredClone(server);
             if (path.startsWith('/commits/')) {
-                const receipt = findCommit(server, path.slice('/commits/'.length));
+                const receipt = (receiptFullStorage ?? f.fullMode) ? fullReceipt(full, path.slice('/commits/'.length))
+                    : findCommit(server, path.slice('/commits/'.length));
                 if (!receipt) throw new StorageError('commitNotFound');
                 return receipt;
             }
             if (path === '/commit') {
                 if (f.beforeCommit) f.beforeCommit();
-                const result = commitMutations(server, JSON.parse(options.body));
-                server = result.state;
+                const result = f.fullMode ? commitFullState(full, JSON.parse(options.body)) : commitMutations(server, JSON.parse(options.body));
+                if (f.fullMode) full = result.state; else server = result.state;
                 if (f.lostResponse) { f.lostResponse = false; throw new TypeError('network'); }
                 return result.receipt;
             }
             throw new Error('Unexpected request ' + path);
         },
-        options: () => ({}), persistDevice: () => 'device_local', busy: () => f.busy,
+        options: () => f.fullMode ? { fullStorage: true } : {}, persistDevice: () => 'device_local', busy: () => f.busy,
         observe() { f.observed++; return () => { f.observed--; }; },
         makeBackup: direction => ({ direction }),
         async backup() { f.backups++; if (f.backupFailure) throw f.backupFailure; if (f.afterBackup) await f.afterBackup(); },
@@ -325,4 +336,52 @@ test('pristine tabs share preferences without a persisted device ID and account 
     f.sync.write('prefs', { upload: true, download: false });
     assert.equal(other.prefs().upload, true); assert.equal(separate.prefs().upload, false);
     other.destroy(); separate.destroy(); f.sync.destroy();
+});
+
+test('automatic full upload commits large cache values with a rescue backup', async () => {
+    const f = fixture(); f.fullMode = true;
+    await f.sync.remember(new Map([['theme', 'base']]), await f.api.request('/state'));
+    f.calls.length = 0; await f.enable(true, false);
+    f.storage.setItem('history:chat', 'x'.repeat(300000));
+    f.storage.setItem('sillytavern_settings_sync_device_id', 'this-device');
+    f.cycle(); await f.sync.tick();
+    assert.equal(f.fullServer.entries['history:chat'].length, 300000);
+    assert.equal(Object.hasOwn(f.fullServer.entries, 'sillytavern_settings_sync_device_id'), false);
+    assert.equal(f.backups, 1); assert.equal(f.calls.filter(path => path === '/commit').length, 1);
+    f.sync.destroy();
+});
+
+test('lost full-upload responses recover from the full receipt even after the mode changes', async () => {
+    const f = fixture(); f.fullMode = true;
+    await f.sync.remember(new Map([['theme', 'base']]), await f.api.request('/state'));
+    await f.enable(true, false);
+    f.storage.setItem('cache:large', 'x'.repeat(300000));
+    f.lostResponse = true; f.cycle(); await f.sync.tick();
+    assert.equal(f.fullServer.entries['cache:large'].length, 300000);
+    assert.equal(f.sync.state().intent.fullStorage, true);
+    f.fullMode = false; f.advance(RETRY_MS[0]); await f.sync.tick();
+    assert.equal(f.sync.state().intent, null);
+    assert.equal(f.backups, 1);
+    assert.equal(f.calls.filter(path => path === '/commit').length, 1);
+    f.sync.destroy();
+});
+
+test('automatic full download removes absent cache keys while keeping local device metadata', async () => {
+    const f = fixture(); f.fullMode = true;
+    f.storage.setItem('sillytavern_settings_sync_device_id', 'this-device');
+    await f.sync.remember(new Map([['theme', 'base']]), await f.api.request('/state'));
+    f.storage.setItem('cache:old', 'remove');
+    f.remote('server-new'); await f.enable(false, true); await f.sync.tick();
+    assert.equal(f.sync.state().blocked, true); // Both local and remote changed; ask first.
+    assert.equal(f.storage.getItem('cache:old'), 'remove');
+    f.sync.destroy();
+
+    const other = fixture(); other.fullMode = true;
+    await other.sync.remember(new Map([['theme', 'base']]), await other.api.request('/state'));
+    other.storage.setItem('cache:old', 'remove');
+    other.remote('server-new'); other.choice = 'download'; await other.enable(false, true); await other.sync.tick();
+    assert.equal(other.storage.getItem('cache:old'), null);
+    assert.equal(other.storage.getItem('theme'), 'server-new');
+    assert.equal(other.conflicts, 1); assert.equal(other.backups, 1); assert.equal(other.reloads, 1);
+    other.sync.destroy();
 });

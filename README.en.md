@@ -4,7 +4,7 @@
 
 Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.6.0**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new atomic commit API.
+Version **1.7.0**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new full-sync API.
 
 ## Features
 
@@ -15,6 +15,14 @@ Version **1.6.0**: **restart the SillyTavern server plugin after upgrading**. Re
 - JSON import with selectable preview, merge or bounded replacement, stale-preview detection and rollback on write failure.
 - Total and selected size estimates, local cleanup suggestions, desktop/mobile layouts, and English, Traditional Chinese and Simplified Chinese UI.
 
+## Settings menu and complete localStorage sync
+
+Open **Settings** in the extension panel to adjust automatic upload/download, backups before import/restore/removal, additional exclusions and the default-off **Sync all localStorage** mode. The full-mode switch is scoped to this site, account and browser device; each device chooses independently. Manual actions and status remain in the panel while the menu is closed.
+
+Full mode applies to both manual and automatic upload/download. It includes caches, history, drafts, large values and possibly credentials. The extension's internal device and scheduling keys remain local. Full and regular modes use separate account-private server files; switching does not silently overwrite one with the other. Initial unequal data prompts for a source during automatic sync. The full JSON sync file is limited to 32 MiB; oversized writes leave existing server data untouched. A complete local rescue backup is required before applying changes. Downloads replace all non-internal keys from the full snapshot and attempt rollback on write failure.
+
+This covers **localStorage only**, not IndexedDB, cookies or other browser storage. Browser quotas vary: data fitting on one device may fail to fit on another. Additional exclusions and the ordinary per-key limit apply only to regular mode.
+
 ## Independent automatic upload and download
 
 Both switches default **off** and require confirmation when enabled. Preferences belong to this website, account and browser device, and are excluded from ordinary sync. Disabling cancels unsent work; an already-sent request may finish.
@@ -24,7 +32,7 @@ Both switches default **off** and require confirmation when enabled. Preferences
 - **Both:** operate independently, sharing account-scoped Web Locks across tabs. Active requests and open storage management defer work.
 - **Conflicts:** initial unequal data without a baseline, two-sided changes or changed remote versions before upload require a choice: keep local and upload once, use server data, or decide later. The first two authorize only that action, without enabling the other switch. Later pauses automatic writes.
 
-Automatic mode synchronizes **only localStorage allowed by the existing filters**. It does not re-save native account/extension settings or change manual sync. Every real write first creates a full server rescue backup, potentially including credentials, even in download-only mode and regardless of the optional management-backup switch. Backup or validation failures abort writes; failed downloads attempt rollback. Upload still reads the remote version with download disabled, without applying remote settings.
+Automatic mode synchronizes regular or full localStorage according to the selected mode. It does not re-save native account/extension settings or change manual sync. Every real write first creates a full server rescue backup, potentially including credentials, even in download-only mode and regardless of the optional management-backup switch. Backup or validation failures abort writes; failed downloads attempt rollback. Upload still reads the remote version with download disabled, without applying remote settings.
 
 Monitoring covers native generation events and known generation/Responses/Embedding/Rerank fetch/XHR endpoints, including accessible same-origin frames. Streaming waits for transfer completion, not headers; response bodies are not cloned or consumed. Prompts, responses, credentials and query parameters are not inspected. Requests with no confirmed completion block uploads. Cross-origin frames, workers, unknown transports and requests started before monitoring are observation limits. Extensions can report lifecycle through the main page without passing content:
 
@@ -152,9 +160,10 @@ All APIs use SillyTavern session authentication and CSRF protection. Under `/api
 - `GET /backups`: up to five summaries, without values.
 - `POST /backups`: `{ operationId, reason, archive }`; reasons are `upload`, `download`, `import`, `restore`, `delete`.
 - `GET /backups/:id`: a retained backup belonging to the current account.
-- `GET /health`: advertises `backups-v1` and `atomic-sync-v1`. Missing capabilities pause automatic work with an update/restart message.
+- `GET /health`: advertises `backups-v1`, `atomic-sync-v1` and `full-storage-v1`. Missing capabilities pause affected work with an update/restart message.
 - `POST /commit`: `{ operationId, expectedRevision, deviceId, mutations }`, validated completely before an atomic write. Version or operation-ID conflicts return HTTP 409; identical retries are idempotent.
 - `GET /commits/:id`: account-private receipt recovery for lost responses. Receipts and values are written together and count toward the existing 5 MiB state limit. Existing per-value limits and manual APIs remain compatible.
+- `GET /full-state`, `POST /full-commit`, `GET /full-commits/:id`: separate full snapshot, atomic versioned commit and retry receipt, limited to 32 MiB JSON. These are separate from regular sync and the five rescue backups.
 
 ### One-click analysis, capacity ceiling and extension hints (1.5.0)
 

@@ -19,6 +19,7 @@ const {
 import { createInitialState, MAX_STATE_BYTES, mergeMutations, normalizeState, touchSettings } from './state.js';
 import { BackupStore } from './backups.js';
 import { commitMutations, findCommit } from './commit.js';
+import { FullStateStore, fullReceipt } from './full-state.js';
 import { StorageError } from '../lib/storage-model.js';
 
 const FILE_NAME = 'device-settings-sync.json';
@@ -110,11 +111,39 @@ function installSillyTavernSecurity(router) {
         router.use(protection.csrfSynchronisedProtection);
     }
     router.use('/backups', express.json({ limit: '32mb' }));
+    router.use('/full-commit', express.json({ limit: '32mb' }));
     router.use(express.json({ limit: '6mb' }));
 }
 
 export async function init(router) {
     installSillyTavernSecurity(router);
+
+    router.get('/full-state', async (request, response) => {
+        try {
+            const state = await serialize(getUserRoot(request), () => new FullStateStore(getUserRoot(request)).read());
+            response.set('Cache-Control', 'no-store').json({ ...state, receipts: undefined });
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.get('/full-commits/:id', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            const receipt = await serialize(root, async () => fullReceipt(await new FullStateStore(root).read(), request.params.id));
+            if (!receipt) return response.status(404).json({ code: 'commitNotFound' });
+            response.set('Cache-Control', 'no-store').json(receipt);
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.post('/full-commit', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            const receipt = await serialize(root, () => new FullStateStore(root).commit(request.body));
+            response.set('Cache-Control', 'no-store').json(receipt);
+        } catch (error) {
+            if (['autoConflict', 'commitConflict'].includes(error.code)) return response.status(409).json({ code: error.code });
+            sendError(response, error);
+        }
+    });
 
     router.get('/commits/:id', async (request, response) => {
         try {
@@ -142,7 +171,7 @@ export async function init(router) {
     });
 
     router.get('/health', (_request, response) => {
-        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.6.0', capabilities: ['backups-v1', 'atomic-sync-v1'] });
+        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.7.0', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1'] });
     });
 
     router.get('/backups', async (request, response) => {

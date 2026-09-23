@@ -42,7 +42,7 @@ test('asks for confirmation before either manual synchronization action', () => 
 
 test('publishes the verified SillyTavern and Node.js compatibility floor', () => {
     assert.equal(manifest.minimum_client_version, '1.14.0');
-    assert.equal(manifest.version, '1.6.0');
+    assert.equal(manifest.version, '1.7.0');
     assert.equal(packageJson.engines.node, '>=18');
     assert.equal(serverPackage.engines.node, '>=18');
 });

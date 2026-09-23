@@ -4,11 +4,12 @@ import { extension_settings } from '../../../extensions.js';
 import { translate } from '../../../i18n.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup } from '../../../popup.js';
 import { DEFAULT_MAX_VALUE_BYTES, parseAdditionalExcludes } from './lib/filter.js';
-import { readStorage, createArchive, serializeArchive, totalBytes, assertUnchanged, applyPlan, StorageError } from './lib/storage-model.js';
+import { readStorage, createArchive, serializeArchive, totalBytes, assertUnchanged, applyPlan, StorageError, isInternalKey } from './lib/storage-model.js';
 import { msg, errorText, bytes } from './lib/messages.js';
 import { openStorageManager } from './ui/storage-manager.js';
 import { probeCapacity } from './lib/capacity-probe.js';
 import { AutoSync } from './lib/auto-sync.js';
+import { AUTO_PREFIX, planRemote, sortedEntries } from './lib/auto-core.js';
 import {
     applyServerState,
     diffSnapshots,
@@ -16,7 +17,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -36,6 +37,7 @@ const diagnostics = {
     revision: 0,
     portableKeys: 0,
     excludedKeys: 0,
+    fullStorage: false,
     pushedMutations: 0,
     pulledChanges: 0,
     failedWrites: 0,
@@ -46,6 +48,7 @@ const diagnostics = {
 
 let operationInFlight = false;
 let managerOpen = false;
+let settingsOpen = false;
 let provisionalDeviceId;
 let automatic;
 
@@ -92,11 +95,16 @@ function getSettings() {
     return settings;
 }
 
+function fullStorageKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':full-mode'; }
+function isFullStorage() { return localStorage.getItem(fullStorageKey()) === '1'; }
+
 function filterOptions() {
     const settings = getSettings();
+    const fullStorage = isFullStorage();
     return {
         maxValueBytes: settings.maxValueBytes,
-        additionalExcludes: parseAdditionalExcludes(settings.additionalExcludes),
+        additionalExcludes: fullStorage ? [] : parseAdditionalExcludes(settings.additionalExcludes),
+        fullStorage,
     };
 }
 
@@ -124,8 +132,32 @@ async function request(path, options = {}) {
     return body;
 }
 
+async function requireFullSupport() {
+    const health = await request('/health');
+    if (!health.capabilities?.includes('full-storage-v1')) throw new StorageError('fullBackendMissing');
+}
+
+async function requestFullState() {
+    const state = await request('/full-state');
+    const entries = Object.create(null);
+    for (const [key, value] of Object.entries(state.entries || {})) {
+        Object.defineProperty(entries, key, { enumerable: true, value: { value, deleted: false } });
+    }
+    return { ...state, entries };
+}
+
+async function syncRequest(path, options = {}, fullStorage = filterOptions().fullStorage) {
+    if (!fullStorage) return request(path, options);
+    if (path === '/state') return requestFullState();
+    if (path.startsWith('/commits/')) return request(path.replace('/commits/', '/full-commits/'), options);
+    if (path === '/commit') return request('/full-commit', options);
+    return request(path, options);
+}
+
 function refreshSnapshot() {
-    const snapshot = snapshotPortableStorage(localStorage, filterOptions());
+    const options = filterOptions();
+    const snapshot = snapshotPortableStorage(localStorage, options);
+    diagnostics.fullStorage = options.fullStorage;
     diagnostics.portableKeys = snapshot.values.size;
     diagnostics.excludedKeys = snapshot.excluded.size;
     const all = readStorage(localStorage);
@@ -247,7 +279,7 @@ async function confirmManualAction(title, message, okButton) {
 async function confirmManualPull() {
     return confirmManualAction(
         tr('dss.pull.title', 'Sync from server'),
-        tr(
+        isFullStorage() ? msg('fullPullConfirm') : tr(
             'dss.pull.confirmMessage',
             'This will overwrite syncable settings on this device with the server settings. Local changes that have not been uploaded may be lost, and the page will reload automatically when complete. A full localStorage snapshot, including caches and credentials, will first be saved to this account on the server. Continue?',
         ),
@@ -258,7 +290,7 @@ async function confirmManualPull() {
 async function confirmManualPush() {
     return confirmManualAction(
         tr('dss.push.title', 'Upload local settings'),
-        tr(
+        isFullStorage() ? msg('fullPushConfirm') : tr(
             'dss.push.confirmMessage',
             'This will replace the server sync data with settings from this device. Portable settings that exist on the server but were deleted locally will also be deleted. A full localStorage snapshot, including caches and credentials, will first be saved to this account on the server. Continue?',
         ),
@@ -274,9 +306,21 @@ async function manualPullLocked({ reload = true } = {}) {
     if (operationInFlight) return { ...diagnostics };
     setOperationState('downloading', true);
     try {
+        const options = filterOptions();
+        if (options.fullStorage) await requireFullSupport();
+        const original = options.fullStorage ? readStorage(localStorage) : null;
         await backupCurrentStorage('download');
-        const state = await request('/state');
-        const result = applyServerState(localStorage, state, filterOptions());
+        const state = options.fullStorage ? await requestFullState() : await request('/state');
+        let result;
+        if (options.fullStorage) {
+            const before = readStorage(localStorage);
+            const sameUserData = [...original].every(([key, value]) => isInternalKey(key) || before.get(key) === value)
+                && [...before].every(([key, value]) => isInternalKey(key) || original.get(key) === value);
+            if (!sameUserData || filterOptions().fullStorage !== options.fullStorage) throw new StorageError('stalePreview');
+            const changes = planRemote(before, state, options).changes;
+            result = { changed: changes.length, skipped: 0, failed: 0 };
+            if (changes.length) applyPlan(localStorage, { before, changes });
+        } else result = applyServerState(localStorage, state, options);
         const at = new Date().toISOString();
         diagnostics.revision = Math.max(0, Number(state.revision) || 0);
         diagnostics.pulledChanges += result.changed;
@@ -287,7 +331,7 @@ async function manualPullLocked({ reload = true } = {}) {
             ? formatText('dss.error.storageWriteFailed', '{count} settings could not be written to browser storage.', { count: result.failed })
             : '';
         refreshSnapshot();
-        if (!result.failed) await automatic?.remember(snapshotPortableStorage(localStorage, filterOptions()).values, state).catch(error => automatic.fatal(error));
+        if (!result.failed) await automatic?.remember(snapshotPortableStorage(localStorage, options).values, state).catch(error => automatic.fatal(error));
 
         if (reload) {
             sessionStorage.setItem(PULL_RESULT_KEY, JSON.stringify({
@@ -323,12 +367,36 @@ async function manualPushLocked() {
     if (operationInFlight) return { ...diagnostics };
     setOperationState('saving', true);
     try {
+        const options = filterOptions();
+        if (options.fullStorage) await requireFullSupport();
         await backupCurrentStorage('upload');
         // SillyTavern's native account settings and extension_settings live in the
         // normal account settings file. Save them first, then upload portable
         // browser-only settings in the same explicit button action.
         await saveSettings();
+        if (JSON.stringify(filterOptions()) !== JSON.stringify(options)) throw new StorageError('stalePreview');
         const snapshot = refreshSnapshot();
+        if (options.fullStorage) {
+            const remote = await requestFullState();
+            const remoteValues = serverStateToPortableValues(remote, options);
+            const changes = diffSnapshots(remoteValues, snapshot.values);
+            const state = changes.length || !remote.seeded
+                ? await request('/full-commit', { method: 'POST', body: JSON.stringify({
+                    operationId: randomId('operation'), expectedRevision: remote.revision, deviceId: getDeviceId(),
+                    entries: sortedEntries(snapshot.values).map(([key, value]) => ({ key, value })),
+                }) }) : remote;
+            diagnostics.revision = state.revision;
+            diagnostics.pushedMutations += changes.length;
+            diagnostics.lastAction = 'upload';
+            diagnostics.lastSyncAt = new Date().toISOString();
+            diagnostics.lastError = '';
+            await automatic?.remember(snapshot.values, { ...remote, revision: state.revision,
+                seeded: true, entries: Object.fromEntries([...snapshot.values].map(([key, value]) => [key, { value }])) })
+                .catch(error => automatic.fatal(error));
+            setOperationState('manual-ready', false);
+            globalThis.toastr?.success(formatText('dss.toast.pushSuccess', 'Uploaded {count} portable settings.', { count: changes.length }));
+            return { ...diagnostics };
+        }
         const remote = await request('/state');
         const remoteValues = serverStateToPortableValues(remote, filterOptions());
         const mutations = diffSnapshots(remoteValues, snapshot.values);
@@ -413,9 +481,37 @@ function bindPanel() {
     if (!excludes) return;
     const settings = getSettings();
     excludes.value = settings.additionalExcludes;
+    const menu = document.querySelector('#dss_settings_menu');
+    const toggle = document.querySelector('#dss_settings_toggle');
+    toggle?.addEventListener('click', () => {
+        excludes.value = getSettings().additionalExcludes;
+        document.querySelector('#dss_full_storage').checked = isFullStorage();
+        document.querySelector('#dss_before_changes').checked = getSettings().backupBeforeChanges === true;
+        menu.hidden = !menu.hidden;
+        settingsOpen = !menu.hidden;
+        toggle.setAttribute('aria-expanded', String(settingsOpen));
+        if (!settingsOpen) automatic?.configure();
+    });
+    const full = document.querySelector('#dss_full_storage');
+    full.checked = isFullStorage();
+    full.addEventListener('change', async () => {
+        const checked = full.checked;
+        full.disabled = true;
+        try {
+            if (operationInFlight || automatic?.running || automatic?.state().intent) throw new StorageError('operationBusy');
+            if (checked && !(await confirmManualAction(msg('fullStorageTitle'), msg('fullStorageConsent'), msg('fullStorageTitle')))) return;
+            localStorage.setItem(fullStorageKey(), checked ? '1' : '0');
+            refreshSnapshot();
+            if (automatic?.prefs().download) { automatic.entry = true; automatic.configure(); }
+        } catch (error) { globalThis.toastr?.error(errorText(error)); }
+        finally { full.checked = isFullStorage(); full.disabled = false; }
+    });
+    const before = document.querySelector('#dss_before_changes');
+    before.checked = settings.backupBeforeChanges === true;
+    before.addEventListener('change', () => { getSettings().backupBeforeChanges = before.checked; saveSettingsDebounced(); });
 
     excludes.addEventListener('change', () => {
-        settings.additionalExcludes = excludes.value;
+        getSettings().additionalExcludes = excludes.value;
         saveSettingsDebounced();
         refreshSnapshot();
     });
@@ -456,9 +552,15 @@ function createPanel() {
                     <span data-i18n="dss.panel.manualNotice">No settings are downloaded, uploaded, polled, or monitored when the page loads. The extension connects only when you use a sync button below.</span>
                 </div>
                 <small data-i18n="dss.panel.description">“Upload local settings” first saves the current SillyTavern account and extension settings, then uploads portable browser settings. “Sync from server” downloads settings and reloads the page once to apply them completely. OAuth and login credentials stored in localStorage are included; HttpOnly login cookies cannot be synchronized.</small>
-                <div id="dss_auto"></div>
-                <label for="dss_excludes" data-i18n="dss.panel.excludesLabel">Additional localStorage keys to exclude (one per line; * wildcards supported)</label>
-                <textarea id="dss_excludes" rows="3" placeholder="example-cache:*" data-i18n="[placeholder]dss.panel.excludesPlaceholder"></textarea>
+                <button id="dss_settings_toggle" class="menu_button" type="button" aria-expanded="false" aria-controls="dss_settings_menu" data-i18n="dss.manager.settingsTitle">Settings</button>
+                <div id="dss_settings_menu" hidden>
+                    <div id="dss_auto"></div>
+                    <label class="dss_check"><input id="dss_full_storage" type="checkbox"><span data-i18n="dss.manager.fullStorageTitle">Sync all localStorage</span></label>
+                    <small data-i18n="dss.manager.fullStorageHint">Includes cache, history and large values; sync-internal keys stay on this device. Separate server data, 32 MiB limit.</small>
+                    <label class="dss_check"><input id="dss_before_changes" type="checkbox"><span data-i18n="dss.manager.beforeChanges">Also back up before import, restore or removal</span></label>
+                    <label for="dss_excludes" data-i18n="dss.panel.excludesLabel">Additional localStorage keys to exclude (one per line; * wildcards supported)</label>
+                    <textarea id="dss_excludes" rows="3" placeholder="example-cache:*" data-i18n="[placeholder]dss.panel.excludesPlaceholder"></textarea>
+                </div>
                 <div class="dss_actions">
                     <button id="dss_pull" class="menu_button" data-i18n="dss.pull.title">Sync from server</button>
                     <button id="dss_push" class="menu_button" data-i18n="dss.push.title">Upload local settings</button>
@@ -540,8 +642,8 @@ async function initializeAutomatic() {
     if (automatic) return;
     try {
         automatic = new AutoSync({
-            request, options: filterOptions, persistDevice: () => getDeviceId(),
-            busy: () => operationInFlight || managerOpen,
+            request: syncRequest, options: filterOptions, persistDevice: () => getDeviceId(),
+            busy: () => operationInFlight || managerOpen || settingsOpen,
             makeBackup, backup: sendBackup, conflict: resolveAutoConflict,
             events: { eventSource, eventTypes: event_types },
             render: renderAuto, changed: refreshSnapshot,

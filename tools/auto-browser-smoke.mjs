@@ -187,6 +187,7 @@ try {
     await fs.mkdir(output, { recursive: true });
     await page.locator('#extensions-settings-button .drawer-toggle').click();
     await page.locator('#device_settings_sync_panel .inline-drawer-toggle').evaluate(node => node.click());
+    await page.locator('#dss_settings_toggle').click();
     await page.locator('#dss_auto').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, 'automatic-desktop.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
@@ -208,6 +209,29 @@ try {
         await localized.close();
         pass(language + ' automatic controls and status use the translated catalog');
     }
+    await toggle('download', false);
+    await page.locator('#dss_full_storage').evaluate(node => node.click());
+    await page.locator('dialog[open] .popup-button-ok').last().click();
+    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().fullStorage === true);
+    await page.evaluate(() => {
+        localStorage.setItem('history:full', '中'.repeat(150000));
+        localStorage.setItem('cache:full', 'keep-me');
+    });
+    const deviceBefore = await page.evaluate(() => localStorage.getItem('sillytavern_settings_sync_device_id'));
+    await page.evaluate(() => DeviceSettingsSync.pushCurrentDevice());
+    let fullState = (await api('/full-state')).body;
+    assert.equal(fullState.entries['history:full'].length, 150000);
+    assert.equal(fullState.entries['cache:full'], 'keep-me');
+    assert.equal(Object.hasOwn(fullState.entries, 'sillytavern_settings_sync_device_id'), false);
+    await page.evaluate(() => {
+        localStorage.setItem('history:full', 'wrong');
+        localStorage.setItem('cache:absent', 'remove-me');
+    });
+    await page.evaluate(() => DeviceSettingsSync.pullFromServer({ reload: false }));
+    assert.equal(await page.evaluate(() => localStorage.getItem('history:full').length), 150000);
+    assert.equal(await page.evaluate(() => localStorage.getItem('cache:absent')), null);
+    assert.equal(await page.evaluate(() => localStorage.getItem('sillytavern_settings_sync_device_id')), deviceBefore);
+    pass('settings menu enables full manual sync of large/cache values with exact replacement and internal-key protection');
     console.log('Completed ' + count + ' automatic browser checks.');
 } finally {
     await browser.close();

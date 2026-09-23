@@ -45,6 +45,11 @@
 #dss_auto label { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
 #dss_auto_status { white-space: pre-line; font-size: .85em; }
 #dss_auto .dss_note { font-size: .8em; opacity: .8; }
+#device_settings_sync_panel #dss_settings_toggle { width: auto; align-self: start; }
+#device_settings_sync_panel #dss_settings_menu { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor, #888); border-radius: 6px; }
+#device_settings_sync_panel #dss_settings_menu .dss_check { display: flex; gap: 8px; align-items: center; }
+#device_settings_sync_panel #dss_settings_menu .dss_check input { width: 16px; min-width: 16px; margin: 0; }
+#device_settings_sync_panel #dss_settings_menu small { opacity: .8; }
 #device_settings_sync_panel [hidden] { display: none !important; }
 .popup.dss_dialog { width: min(1280px, 96vw); max-width: 96vw; }
 .dss_manager [hidden] { display: none !important; }

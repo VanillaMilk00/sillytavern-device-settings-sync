@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.7.0 - 2026-09-24
+
+### 繁體中文
+
+- 面板加入「設定」選單，集中自動上傳／下載、變更前備份、額外排除鍵與完整 localStorage 同步開關。
+- 完整模式預設關閉，手動及自動同步均可使用。快取、歷史與大型值納入獨立的 32 MiB 帳戶私有同步檔，內部裝置與排程鍵仍留在本機。
+- 完整同步採原子版本提交、重試收據及變更前救援備份；下載缺失鍵時執行有復原能力的範圍取代。
+- 三語介面與 README 更新；備份及同步仍不涵蓋 IndexedDB。升級後必須重啟伺服器插件。
+
+### 简体中文
+
+- 新增「设置」菜单，集中自动上传／下载、变更前备份、额外排除键和完整 localStorage 同步开关。
+- 默认关闭的完整模式适用于手动与自动同步；缓存、历史和大型值写入独立的 32 MiB 账户文件，内部设备及调度键保留在本机。
+- 原子版本提交、重试收据、救援备份，以及下载时可回滚的完整范围替换。更新三语文档；IndexedDB 暂不包含。升级后重启服务器插件。
+
+### English
+
+- Add a Settings menu for automatic upload/download, pre-change backups, exclusions and optional full localStorage sync.
+- Full mode is off by default and works with manual and automatic sync. Caches, history and large values use a separate account-private 32 MiB file; device and scheduler keys stay local.
+- Add atomic versioned full commits, retry receipts, rescue backups and rollback-capable replacement downloads. Update all three languages. IndexedDB remains outside backup and sync. Restart the server plugin after upgrading.
+
 ## 1.6.0 - 2026-09-23
 
 ### 繁體中文

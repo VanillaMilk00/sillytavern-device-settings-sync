@@ -13,6 +13,10 @@ npm run check
 
 Version 1.6.0 retains the existing 60 tests, totaling 89 unit/behavior tests, 30 management browser checks, 12 automatic-mode checks and 7 server-security checks. Added cases cover independent switches, idle cycles, no-op work, conflict/backup failures, CAS races, lost-response recovery, bounded retries, old servers, closed/frozen/pristine tabs, re-enabling, reload guards, deferred reload and quota rollback.
 
+1.7.0 共 96 項單元／行為測試，另外驗證完整 localStorage 模式的大型值與特殊鍵、32 MiB 原子提交、重試去重、模式獨立性、完整範圍取代與內部鍵保護。隔離瀏覽器測試加入設定選單與完整模式手動同步；自動完整模式以行為測試涵蓋。安全測試加入完整 API 的登入、CSRF、帳戶隔離及版本競爭。
+
+Version 1.7.0 has 96 unit/behavior tests, including full-mode automatic upload/download. Isolated browser checks cover the Settings menu and full-mode manual sync; security checks cover full-state authentication, CSRF, account isolation and compare-and-swap conflicts.
+
 The original 20 tests remain, with additional backup and storage-operation coverage. Unit tests use temporary directories and in-memory Storage, not everyday account data.
 
 ## 隔離整合環境 / Disposable host
