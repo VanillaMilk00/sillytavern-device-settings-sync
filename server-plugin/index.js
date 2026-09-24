@@ -20,6 +20,7 @@ import { createInitialState, MAX_STATE_BYTES, mergeMutations, normalizeState, to
 import { BackupStore } from './backups.js';
 import { commitMutations, findCommit } from './commit.js';
 import { FullStateStore, fullReceipt } from './full-state.js';
+import { IndexedDbTransferStore } from './indexeddb.js';
 import { StorageError } from '../lib/storage-model.js';
 
 const FILE_NAME = 'device-settings-sync.json';
@@ -77,8 +78,16 @@ function serialize(root, operation) {
 
 function sendError(response, error) {
     if (error instanceof StorageError) {
-        const status = error.code === 'backupNotFound' ? 404 : error.code === 'backupConflict' ? 409 : error.code === 'archiveTooLarge' ? 413 : 400;
-        return response.status(status).json({ code: error.code });
+        const status = /NotFound$/u.test(error.code) ? 404
+            : /Conflict$|RevisionConflict$/u.test(error.code) ? 409
+                : /TooLarge$/u.test(error.code) ? 413 : 400;
+        return response.status(status).json({ code: error.code, details: error.details || {} });
+    }
+    if (typeof error?.code === 'string' && error.code.startsWith('indexedDb')) {
+        const status = /NotFound$/u.test(error.code) ? 404
+            : /Conflict$/u.test(error.code) ? 409
+                : /TooLarge$/u.test(error.code) ? 413 : 400;
+        return response.status(status).json({ code: error.code, details: error.details || {} });
     }
     const status = error instanceof TypeError || error instanceof RangeError ? 400 : 500;
     if (status === 500) console.error('[device-settings-sync]', error);
@@ -112,6 +121,7 @@ function installSillyTavernSecurity(router) {
     }
     router.use('/backups', express.json({ limit: '32mb' }));
     router.use('/full-commit', express.json({ limit: '32mb' }));
+    router.use('/indexeddb/transfers', express.json({ limit: '2mb' }));
     router.use(express.json({ limit: '6mb' }));
 }
 
@@ -171,7 +181,63 @@ export async function init(router) {
     });
 
     router.get('/health', (_request, response) => {
-        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.7.0', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1'] });
+        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.8.0', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1'] });
+    });
+
+    router.post('/indexeddb/transfers/start', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            const result = await serialize(root, () => new IndexedDbTransferStore(root).start(request.body));
+            response.set('Cache-Control', 'no-store').json(result);
+        }
+        catch (error) { sendError(response, error); }
+    });
+
+    router.put('/indexeddb/transfers/:id/chunks/:index', async (request, response) => {
+        try {
+            response.set('Cache-Control', 'no-store').json(await new IndexedDbTransferStore(getUserRoot(request))
+                .putChunk(request.params.id, Number(request.params.index), request.body));
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.post('/indexeddb/transfers/:id/finish', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            response.set('Cache-Control', 'no-store').json(await serialize(root, () => new IndexedDbTransferStore(root).finish(request.params.id)));
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.get('/indexeddb/state', async (request, response) => {
+        try { response.set('Cache-Control', 'no-store').json(await new IndexedDbTransferStore(getUserRoot(request)).stateMetadata()); }
+        catch (error) { sendError(response, error); }
+    });
+
+    router.get('/indexeddb/state/chunks/:index', async (request, response) => {
+        try {
+            const store = new IndexedDbTransferStore(getUserRoot(request));
+            const index = Number(request.params.index);
+            const [metadata, chunk] = await Promise.all([store.stateMetadata(), store.stateChunk(index)]);
+            response.set('Cache-Control', 'no-store').json({ index, chunks: metadata.chunks, digest: metadata.digest, chunk });
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.get('/indexeddb/backups', async (request, response) => {
+        try { response.set('Cache-Control', 'no-store').json(await new IndexedDbTransferStore(getUserRoot(request)).listBackups()); }
+        catch (error) { sendError(response, error); }
+    });
+
+    router.get('/indexeddb/backups/:id', async (request, response) => {
+        try { response.set('Cache-Control', 'no-store').json(await new IndexedDbTransferStore(getUserRoot(request)).backupMetadata(request.params.id)); }
+        catch (error) { sendError(response, error); }
+    });
+
+    router.get('/indexeddb/backups/:id/chunks/:index', async (request, response) => {
+        try {
+            const store = new IndexedDbTransferStore(getUserRoot(request));
+            const metadata = await store.backupMetadata(request.params.id);
+            const chunk = await store.backupChunk(request.params.id, Number(request.params.index));
+            response.set('Cache-Control', 'no-store').json({ index: Number(request.params.index), chunks: metadata.chunks, digest: metadata.digest, chunk });
+        } catch (error) { sendError(response, error); }
     });
 
     router.get('/backups', async (request, response) => {

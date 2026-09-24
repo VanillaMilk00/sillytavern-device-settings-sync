@@ -4,7 +4,7 @@
 
 Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.7.0**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the new full-sync API.
+Version **1.8.0**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the selected-range or chunked IndexedDB APIs.
 
 ## Features
 
@@ -14,14 +14,34 @@ Version **1.7.0**: **restart the SillyTavern server plugin after upgrading**. Re
 - A WizTree-style storage tree and proportional treemap with search, multi-selection, sorting, folder/key export and removal.
 - JSON import with selectable preview, merge or bounded replacement, stale-preview detection and rollback on write failure.
 - Total and selected size estimates, local cleanup suggestions, desktop/mobile layouts, and English, Traditional Chinese and Simplified Chinese UI.
+- Choose portable, all, or selected localStorage keys/folders; explicitly selected cache, history and large values are included.
+- Optional IndexedDB synchronization and database/store/record management, import, export and removal.
 
 ## Settings menu and complete localStorage sync
 
-Open **Settings** in the extension panel to adjust automatic upload/download, backups before import/restore/removal, additional exclusions and the default-off **Sync all localStorage** mode. The full-mode switch is scoped to this site, account and browser device; each device chooses independently. Manual actions and status remain in the panel while the menu is closed.
+Open **Settings** in the extension panel to adjust automatic upload/download, backups before changes, additional exclusions and the localStorage sync range. Range preferences are stored locally per site, account and device; they are not copied to other devices.
+
+- **Portable settings** (default): existing cache, history, large-value, credential and custom-exclusion rules apply.
+- **Selected keys/folders only:** in Manage localStorage, select entries or a folder and choose **Use selection as sync range**. Explicitly selected cache, history and large values are included; internal sync keys always remain excluded. Downloads affect only that range.
+- **All localStorage:** synchronize every non-internal key, including caches, history, drafts, large values and possibly credentials.
+
+Selected-range and full modes use the separate full-storage server file, limited to 32 MiB JSON. Manual and automatic synchronization honor the selected scope; an empty selection never silently expands to all storage.
 
 Full mode applies to both manual and automatic upload/download. It includes caches, history, drafts, large values and possibly credentials. The extension's internal device and scheduling keys remain local. Full and regular modes use separate account-private server files; switching does not silently overwrite one with the other. Initial unequal data prompts for a source during automatic sync. The full JSON sync file is limited to 32 MiB; oversized writes leave existing server data untouched. A complete local rescue backup is required before applying changes. Downloads replace all non-internal keys from the full snapshot and attempt rollback on write failure.
 
-This covers **localStorage only**, not IndexedDB, cookies or other browser storage. Browser quotas vary: data fitting on one device may fail to fit on another. Additional exclusions and the ordinary per-key limit apply only to regular mode.
+Full mode covers **localStorage only**, not IndexedDB, cookies or other browser storage. Browser quotas vary: data fitting on one device may fail to fit on another. Additional exclusions and the ordinary per-key limit apply only to portable mode.
+
+## Optional IndexedDB sync and manager
+
+After explicitly enabling IndexedDB in Settings, the existing manual upload/download and corresponding automatic switches also process IndexedDB. It is off by default and the preference is local to this site/account/device.
+
+- Choose selected databases/items or all same-origin databases. In Manage IndexedDB, select databases, object stores or individual records and choose **Use selection as sync range**. Import, export and removal are also available per selection.
+- Upload and download are merge-only: incoming values replace matching primary keys, while extra server and local records remain. Sync never deletes records; removal is an explicit local manager action.
+- IndexedDB uses its own five account-private rescue slots. Each archive is capped at 128 MiB and transferred in 1 MiB chunks with integrity checks. The browser must support `indexedDB.databases()`.
+- Common structured values, cycles, Blob/File and binary data are retained. Unsupported values, schema conflicts, blocked databases and quota errors stop the operation instead of silently skipping data.
+- A complete local IndexedDB rescue snapshot is saved before sync. IndexedDB cannot provide one atomic transaction across different databases/object stores; recover partial failures from its separate backup slots.
+
+`navigator.storage.estimate()` reports a whole-origin estimate, not an IndexedDB-only quota or guaranteed maximum. The extension never clears data or guesses which records are safe to remove.
 
 ## Independent automatic upload and download
 
@@ -114,7 +134,7 @@ Both actions create a full snapshot of the **current device's localStorage befor
 
 Open **Manage localStorage → Backups** to fetch the list. Slots show time, device, reason, key count, estimated size and JSON size, with browse/export/restore actions. Contents load only when selected. The option to also back up before importing, restoring or removing data is **on by default**. Saved preferences are preserved; if an older installation has it disabled, enable it manually in the manager.
 
-**These backups contain localStorage only**—not account settings files, server chat files, characters, cookies, sessionStorage or IndexedDB. They include localStorage caches, history, large values and credentials without ordinary sync exclusions. Regular cross-device sync continues to apply its existing exclusion rules and size limits.
+**These localStorage backups contain localStorage only**—not account settings files, server chat files, characters, cookies, sessionStorage or IndexedDB. They include localStorage caches, history, large values and credentials without ordinary sync exclusions. IndexedDB uses separate five-slot backups; regular localStorage sync keeps its existing exclusions and size limits.
 
 ## Storage manager
 
@@ -160,10 +180,13 @@ All APIs use SillyTavern session authentication and CSRF protection. Under `/api
 - `GET /backups`: up to five summaries, without values.
 - `POST /backups`: `{ operationId, reason, archive }`; reasons are `upload`, `download`, `import`, `restore`, `delete`.
 - `GET /backups/:id`: a retained backup belonging to the current account.
-- `GET /health`: advertises `backups-v1`, `atomic-sync-v1` and `full-storage-v1`. Missing capabilities pause affected work with an update/restart message.
+- `GET /health`: advertises `backups-v1`, `atomic-sync-v1`, `full-storage-v1`, `indexeddb-sync-v1` and `indexeddb-chunks-v1`. Missing capabilities pause affected work with an update/restart message.
 - `POST /commit`: `{ operationId, expectedRevision, deviceId, mutations }`, validated completely before an atomic write. Version or operation-ID conflicts return HTTP 409; identical retries are idempotent.
 - `GET /commits/:id`: account-private receipt recovery for lost responses. Receipts and values are written together and count toward the existing 5 MiB state limit. Existing per-value limits and manual APIs remain compatible.
 - `GET /full-state`, `POST /full-commit`, `GET /full-commits/:id`: separate full snapshot, atomic versioned commit and retry receipt, limited to 32 MiB JSON. These are separate from regular sync and the five rescue backups.
+- `POST /indexeddb/transfers/start`, `PUT /indexeddb/transfers/:id/chunks/:index`, `POST /indexeddb/transfers/:id/finish`: chunked upload and atomic merge commit, capped at 128 MiB with account-scoped revision checks and idempotent operation IDs.
+- `GET /indexeddb/state` and `/indexeddb/state/chunks/:index`: read the account's server snapshot in chunks.
+- `GET /indexeddb/backups`, `GET /indexeddb/backups/:id`, `GET /indexeddb/backups/:id/chunks/:index`: list and retrieve the separate five-slot IndexedDB rescue archives.
 
 ### One-click analysis, capacity ceiling and extension hints (1.5.0)
 

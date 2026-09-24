@@ -247,6 +247,20 @@ test('disable cancels queued work and unsupported environments never monitor or 
     f.sync.destroy();
 });
 
+test('an unsent upload intent is canceled when upload is disabled but download remains enabled', async () => {
+    const f = fixture();
+    await f.baseline();
+    f.remote('server-new');
+    await f.enable(false, true);
+    f.sync.saveState({ intent: { operationId: 'auto_unsent_123', cycle: 'old-cycle' } });
+    await f.sync.tick();
+    assert.equal(f.sync.state().intent, null);
+    assert.equal(f.storage.getItem('theme'), 'server-new');
+    assert.equal(f.calls.includes('/commit'), false);
+    assert.equal(f.sync.state().blocked, false);
+    f.sync.destroy();
+});
+
 test('re-enabling upload never schedules an old activity cycle', async () => {
     const f = fixture(); await f.baseline(); await f.enable(true, false);
     f.storage.setItem('theme', 'local'); f.cycle();

@@ -7,6 +7,7 @@ import {
 import { analyzeCleanup, classifyCleanup, planCleanup, describeEntry } from '../lib/storage-analysis.js';
 import { REFERENCE_CAPACITY_BYTES } from '../lib/capacity-probe.js';
 import { msg, bytes, errorText } from '../lib/messages.js';
+import { renderIndexedDbBackups, renderIndexedDbManager } from './indexeddb-manager.js';
 
 function element(tag, text, className) {
     const node = document.createElement(tag);
@@ -58,6 +59,7 @@ function classification(key, value, options) {
     return msg({
         'portable-setting': 'portable', 'sync-internal': 'internal', 'data-or-cache': 'dataCache',
         'custom-exclude': 'customExclude', 'binary-value': 'binary', 'too-large': 'tooLarge', 'invalid-key': 'invalidKey',
+        'full-sync': 'fullSync', 'selected-sync': 'selectedSync', 'not-selected': 'notSelected',
     }[reason]);
 }
 
@@ -248,9 +250,9 @@ class StorageTree {
     }
 }
 
-export async function openStorageManager(api) {
+export async function openStorageManager(api, { initialTab = 'local' } = {}) {
     let disposed = false;
-    let activeTab = 'local';
+    let activeTab = ['local', 'backups', 'cleanup', 'indexeddb', 'indexedDbBackups'].includes(initialTab) ? initialTab : 'local';
     let currentTree;
     let viewGeneration = 0;
     let pending = false;
@@ -395,6 +397,14 @@ export async function openStorageManager(api) {
         const internal = checkbox(msg('includeInternal'));
         toolbar.append(
             button(msg('rescan'), () => guard(async () => { renderLocal(); clearFeedback(); })),
+            button(msg('useAsSyncScope'), () => guard(async () => {
+                if (!currentTree.selected.size) { status.textContent = msg('selectedScopeEmpty'); return; }
+                const scope = currentTree.scope();
+                await api.setSyncScope(scope);
+                status.classList.remove('dss_error');
+                status.textContent = msg('syncScopeSaved', { count: currentTree.selected.size });
+                renderLocal();
+            })),
             button(msg('exportAll'), () => guard(async () => download(createArchive(readStorage(localStorage), { kind: 'full' }, source())))),
             button(msg('exportSelected'), () => guard(async () => {
                 if (currentTree.selected.size) download(createArchive(readStorage(localStorage), currentTree.scope(), source()));
@@ -484,6 +494,8 @@ export async function openStorageManager(api) {
         content.replaceChildren();
         if (tab === 'local') return renderLocal();
         if (tab === 'cleanup') return renderCleanup();
+        if (tab === 'indexeddb') return renderIndexedDbManager({ api, content, status, guard, refresh: showTab });
+        if (tab === 'indexeddbBackups') return renderIndexedDbBackups({ api, content, status, guard, refresh: showTab });
         content.append(element('p', msg('backupHelp')), element('p', msg('credentialsNote'), 'dss_note'));
         const records = await api.listBackups();
         if (disposed || generation !== viewGeneration) return;
@@ -524,7 +536,7 @@ export async function openStorageManager(api) {
             content.append(card);
         }
     }
-    for (const tab of ['local', 'backups', 'cleanup']) {
+    for (const tab of ['local', 'backups', 'cleanup', 'indexeddb', 'indexeddbBackups']) {
         const node = button(msg(tab), () => guard(() => showTab(tab)));
         node.dataset.tab = tab;
         tabs.append(node);

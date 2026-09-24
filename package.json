@@ -1,6 +1,6 @@
 {
   "name": "sillytavern-device-settings-sync",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "private": true,
   "description": "Manual and opt-in automatic cross-device browser settings sync for SillyTavern",
   "author": "VanillaMilk00",
@@ -13,7 +13,7 @@
   "bugs": "https://github.com/VanillaMilk00/sillytavern-device-settings-sync/issues",
   "type": "module",
   "scripts": {
-    "check": "node --check index.js && node --check install-server-plugin.mjs && node --check lib/filter.js && node --check lib/sync-core.js && node --check lib/storage-model.js && node --check lib/storage-analysis.js && node --check lib/capacity-probe.js && node --check lib/messages.js && node --check lib/auto-core.js && node --check lib/auto-sync.js && node --check lib/activity-monitor.js && node --check ui/storage-manager.js && node --check server-plugin/index.js && node --check server-plugin/state.js && node --check server-plugin/backups.js && node --check server-plugin/commit.js && node --check server-plugin/full-state.js && node --check tools/browser-smoke.mjs && node --check tools/auto-browser-smoke.mjs && node --check tools/server-smoke.mjs",
+    "check": "node --check index.js && node --check install-server-plugin.mjs && node --check lib/filter.js && node --check lib/sync-core.js && node --check lib/storage-model.js && node --check lib/storage-analysis.js && node --check lib/capacity-probe.js && node --check lib/messages.js && node --check lib/auto-core.js && node --check lib/auto-sync.js && node --check lib/activity-monitor.js && node --check lib/indexeddb-model.js && node --check lib/indexeddb-transfer.js && node --check ui/storage-manager.js && node --check ui/indexeddb-manager.js && node --check server-plugin/index.js && node --check server-plugin/state.js && node --check server-plugin/backups.js && node --check server-plugin/commit.js && node --check server-plugin/full-state.js && node --check server-plugin/indexeddb.js && node --check tests/indexeddb-model.test.js && node --check tools/browser-smoke.mjs && node --check tools/auto-browser-smoke.mjs && node --check tools/server-smoke.mjs",
     "test": "node --test"
   },
   "engines": {

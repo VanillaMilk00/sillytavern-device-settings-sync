@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.8.0 - 2026-09-24
+
+### 繁體中文
+
+- localStorage 同步範圍新增「一般／全部／只同步選取項目」；選取模式的快取、歷史及大型值會同步，擴充內部鍵仍受保護。
+- 新增 IndexedDB 樹狀管理、範圍選取、匯入／匯出／移除，以及手動與既有自動上傳／下載整合；下載採合併並保留本機額外紀錄。
+- IndexedDB 檔案匯入可勾選資料庫、物件儲存區或單筆紀錄，顯示新增／覆蓋預覽並檢查預覽後的本機變更；範圍外結構不會被套用。
+- IndexedDB 使用獨立帳戶五格救援備份與 128 MiB、1 MiB 分塊傳輸；加入結構衝突、版本競爭與完整性保護。
+- 更新繁中、簡中、英文 README 及伺服器插件能力標記。升級後必須重啟 SillyTavern 伺服器插件。
+
+### 简体中文
+
+- localStorage 同步范围新增“普通／全部／仅同步选中项”；选中模式会同步明确选择的缓存、历史和大型值，扩展内部键仍受保护。
+- 新增 IndexedDB 树状管理、范围选择、导入／导出／移除，并接入手动及现有自动上传／下载；下载采用合并并保留本地额外记录。
+- IndexedDB 文件导入可勾选数据库、对象存储区或单条记录，显示新增／覆盖预览并检查预览后的本地变化；范围外结构不会被应用。
+- IndexedDB 使用独立账户五槽救援备份和 128 MiB、1 MiB 分块传输，并提供结构冲突、版本竞争与完整性保护。
+- 更新三语 README 和服务器能力标记。升级后必须重启 SillyTavern 服务器插件。
+
+### English
+
+- Add portable/all/selected localStorage sync scopes. Selected mode includes explicitly chosen cache, history and large values while protecting extension-internal keys.
+- Add a tree-based IndexedDB manager, scoped selection, import/export/removal, and integration with manual and existing automatic upload/download. Downloads merge and preserve local-only records.
+- IndexedDB file import can select databases, stores or individual records, previews additions/overwrites, detects stale previews, and leaves out-of-scope schemas untouched.
+- Add independent account-scoped five-slot IndexedDB rescue backups and 128 MiB transfers in 1 MiB chunks, with schema, revision and integrity checks.
+- Update all three READMEs and server capability markers. Restart the SillyTavern server plugin after upgrading.
+
 ## 1.7.0 - 2026-09-24
 
 ### 繁體中文

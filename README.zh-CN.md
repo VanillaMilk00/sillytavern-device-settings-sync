@@ -4,7 +4,7 @@
 
 让同一个 SillyTavern 账户在手机、桌面及其他设备之间手动同步设置，并可选择自动同步可移植浏览器设置。
 
-当前版本：**1.7.0**。升级后必须**重启 SillyTavern 服务器插件**；只刷新浏览器不会加载新的完整同步 API。
+当前版本：**1.8.0**。升级后必须**重启 SillyTavern 服务器插件**；只刷新浏览器不会加载新的同步与 IndexedDB 分块 API。
 
 ## 功能
 
@@ -14,14 +14,34 @@
 - WizTree 风格树状清单与容量方块图，支持搜索、多选、排序，以及完整／文件夹／单键导入、导出和删除。
 - 导入预览、合并或限定范围替换、变更前检查、写入失败回滚。
 - 显示总用量估算、选中容量和本地清理建议；支持桌面／手机布局与繁体中文、简体中文、英文。
+- localStorage 可选普通、全部或仅同步选中的键／文件夹；明确选中的缓存、历史和大型值也会同步。
+- 可选开启 IndexedDB 同步，并在数据库、对象存储和记录层级管理、导入、导出及移除。
 
 ## 设置菜单与完整 localStorage 同步
 
-在扩展面板打开「设置」，可调整自动上传／下载、导入／恢复／删除前备份、额外排除键，以及默认关闭的「同步完整 localStorage」。完整模式开关按当前网站、账户与浏览器设备保存，不会传到其他设备；每台设备独立选择。关闭菜单后仍可查看状态和手动同步。
+在扩展面板打开「设置」，可调整自动上传／下载、变更前备份、额外排除键及 localStorage 同步范围。范围按网站、账户和设备保存在本地，不传到其他设备。
+
+- **普通设置**（默认）：沿用既有缓存、历史、大型值、凭证和自定义排除规则。
+- **只同步选中项**：打开「管理 localStorage」，勾选键或文件夹，再点「将选择用作同步范围」。明确选中的缓存、历史和大型值会包含；同步器内部键始终排除。下载只修改所选范围。
+- **同步全部 localStorage**：同步所有非内部键，包括缓存、历史、草稿、大型值及可能的凭证。
+
+选中范围与完整模式使用独立账户同步文件，均限制为 32 MiB JSON。手动及自动同步都遵循该范围；不会在未选择时静默同步全部数据。
 
 完整模式同时用于手动与自动上传／下载，包含缓存、历史、草稿、大型值及可能的凭证；扩展内部的设备标识和调度键保留在本机。完整与普通模式使用不同的账户私有服务器文件，切换模式不会直接以其中一份覆盖另一份。首次数据不同时，自动同步询问来源。完整 JSON 同步文件上限 32 MiB；超限不改动既有服务器数据。应用变更前先保存完整本机救援备份；下载按完整快照替换非内部键，写入失败尝试回滚。
 
-此模式只涵盖 **localStorage**，不含 IndexedDB、Cookie 或其他浏览器存储。不同设备容量可能不同，一台设备能保存的数据未必能写入另一台。额外排除规则和普通单键上限仅适用于普通模式。
+完整模式只涵盖 **localStorage**，不含 IndexedDB、Cookie 或其他浏览器存储。不同设备容量可能不同，一台设备能保存的数据未必能写入另一台。额外排除规则和普通单键上限仅适用于普通模式。
+
+## IndexedDB 同步与管理（可选）
+
+在「设置」中明确开启 IndexedDB 后，现有的手动上传／下载和对应自动开关会一并处理 IndexedDB。此功能默认关闭，配置仅保存在当前网站／账户／设备。
+
+- 范围可选「选中的数据库／项目」或「同源所有数据库」。在「管理 IndexedDB」中选择数据库、对象存储或单条记录，再点「将选择用作同步范围」；也可以单独导入、导出和移除。
+- 同步上传与下载均采用合并：相同主键的记录以来源值更新，服务器和本地的额外记录都会保留。同步不会删除记录；删除仅在本地管理界面明确执行。
+- 使用独立的五槽账户救援备份。每份归档最多 128 MiB，按 1 MiB 分块传输并校验完整性；浏览器需支持 `indexedDB.databases()`。
+- 支持常见结构化值、循环引用、Blob／File 和二进制值。无法安全序列化、数据库结构冲突、锁定或配额错误会中止操作，不会静默跳过。
+- 同步前保存完整本地 IndexedDB 快照。跨数据库／对象存储区无法形成单一原子事务；发生部分失败时可从独立备份槽恢复。
+
+`navigator.storage.estimate()` 是整个来源的估算，不是 IndexedDB 专属容量或保证上限。不会自动清空或推测数据是否可删除。
 
 ## 独立控制自动上传和下载
 
@@ -114,7 +134,7 @@ Termux 的酒馆目录和启动方式可参考 [SillyTavern 官方 Android 说�
 
 打开「管理 localStorage → 备份插槽」才加载列表。每格显示时间、设备、原因、键数、估算容量和 JSON 大小，支持浏览、导出及恢复；选中时才读取内容。「导入、恢复或删除本机数据前也自动备份」默认**开启**。保留已保存的开关选择；旧版已关闭者，请在管理窗口手动开启。
 
-**备份只包含 localStorage**，不包含账户设置文件、服务器聊天文件、角色、Cookie、sessionStorage 或 IndexedDB。完整快照包含 localStorage 中的缓存、历史、大型值和凭证，不应用普通同步排除规则。日常跨设备同步仍使用原有排除规则与大小限制。
+**localStorage 备份只包含 localStorage**，不包含账户设置文件、服务器聊天文件、角色、Cookie、sessionStorage 或 IndexedDB。完整快照包含 localStorage 中的缓存、历史、大型值和凭证，不应用普通同步排除规则。IndexedDB 使用独立的五槽备份；日常 localStorage 同步仍应用原排除规则与大小限制。
 
 ## 管理与导入导出
 
@@ -160,10 +180,13 @@ JSON 文件／备份请求限制 **32 MiB**，超限拒绝且不修改原数据�
 - `GET /backups`：最多五份摘要，不包含设置值。
 - `POST /backups`：`{ operationId, reason, archive }`，原因为 `upload`、`download`、`import`、`restore`、`delete`。
 - `GET /backups/:id`：仅访问当前账户保留中的指定快照。
-- `GET /health`：声明 `backups-v1`、`atomic-sync-v1`、`full-storage-v1`；旧后端缺少所需能力时暂停相关功能并提示更新／重启。
+- `GET /health`：声明 `backups-v1`、`atomic-sync-v1`、`full-storage-v1`、`indexeddb-sync-v1`、`indexeddb-chunks-v1`；旧后端缺少所需能力时暂停相关功能并提示更新／重启。
 - `POST /commit`：`{ operationId, expectedRevision, deviceId, mutations }`，完整验证后原子写入，版本或操作标识冲突返回 HTTP 409；相同请求重试不重复应用。
 - `GET /commits/:id`：当前账户的提交收据，用于恢复丢失响应。收据与数据同时写入，计入既有 5 MiB 同步文件上限；单值限制与手动 API 保持兼容。
 - `GET /full-state`、`POST /full-commit`、`GET /full-commits/:id`：独立的完整快照、原子版本提交和重试收据；上限 32 MiB JSON，与普通同步和五格救援备份分开。
+- `POST /indexeddb/transfers/start`、`PUT /indexeddb/transfers/:id/chunks/:index`、`POST /indexeddb/transfers/:id/finish`：分块上传与原子合并提交，上限 128 MiB，按账户校验版本并以操作标识去重。
+- `GET /indexeddb/state` 和 `/indexeddb/state/chunks/:index`：分块读取账户服务器快照。
+- `GET /indexeddb/backups`、`GET /indexeddb/backups/:id`、`GET /indexeddb/backups/:id/chunks/:index`：读取独立于 localStorage 的 IndexedDB 五槽救援备份。
 
 ### 一键分析、容量上限与扩展名（1.5.0）
 

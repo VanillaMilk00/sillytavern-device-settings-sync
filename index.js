@@ -9,6 +9,8 @@ import { msg, errorText, bytes } from './lib/messages.js';
 import { openStorageManager } from './ui/storage-manager.js';
 import { probeCapacity } from './lib/capacity-probe.js';
 import { AutoSync } from './lib/auto-sync.js';
+import { IndexedDbError, snapshotIndexedDB, serializeIndexedDbArchive, mergeIndexedDbArchive, mergeArchiveObjects, deleteIndexedDbItems, selectIndexedDbArchive } from './lib/indexeddb-model.js';
+import { uploadIndexedDbArchive, downloadIndexedDbArchive, digestHex } from './lib/indexeddb-transfer.js';
 import { AUTO_PREFIX, planRemote, sortedEntries } from './lib/auto-core.js';
 import {
     applyServerState,
@@ -17,7 +19,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.7.0';
+const VERSION = '1.8.0';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -95,17 +97,297 @@ function getSettings() {
     return settings;
 }
 
-function fullStorageKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':full-mode'; }
-function isFullStorage() { return localStorage.getItem(fullStorageKey()) === '1'; }
+function fullStorageKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':localstorage-mode'; }
+function localStorageMode() {
+    const value = localStorage.getItem(fullStorageKey());
+    if (['portable', 'selected', 'full'].includes(value)) return value;
+    const legacy = localStorage.getItem(AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':full-mode');
+    return legacy === '1' ? 'full' : 'portable';
+}
+function selectedScopeKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':localstorage-scope'; }
+function selectedStorageScope() {
+    try {
+        const scope = JSON.parse(localStorage.getItem(selectedScopeKey()) || 'null');
+        if (scope?.kind === 'prefix' && typeof scope.prefix === 'string' && scope.prefix.length) return scope;
+        if (scope?.kind === 'keys' && Array.isArray(scope.keys)) {
+            const keys = [...new Set(scope.keys.filter(key => typeof key === 'string' && !isInternalKey(key)))];
+            return { kind: 'keys', keys };
+        }
+    } catch { /* An invalid scope must never broaden synchronization. */ }
+    return { kind: 'keys', keys: [] };
+}
 
 function filterOptions() {
     const settings = getSettings();
-    const fullStorage = isFullStorage();
+    const mode = localStorageMode();
+    const fullStorage = mode === 'full';
+    const selectedScope = mode === 'selected' ? selectedStorageScope() : null;
     return {
         maxValueBytes: settings.maxValueBytes,
-        additionalExcludes: fullStorage ? [] : parseAdditionalExcludes(settings.additionalExcludes),
+        additionalExcludes: fullStorage || selectedScope ? [] : parseAdditionalExcludes(settings.additionalExcludes),
         fullStorage,
+        selectedScope,
+        selectedScopeConfigured: mode !== 'selected' || selectedScopeKeyExists(),
     };
+}
+
+function selectedScopeKeyExists() {
+    const scope = selectedStorageScope();
+    return scope.kind === 'prefix' ? scope.prefix.length > 0 : scope.keys.length > 0;
+}
+
+function indexedDbConfigKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-config'; }
+function indexedDbScopeKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-scope'; }
+function indexedDbConfig() {
+    try {
+        const value = JSON.parse(localStorage.getItem(indexedDbConfigKey()) || 'null');
+        return { enabled: value?.enabled === true, scopeMode: value?.scopeMode === 'all' ? 'all' : 'selected' };
+    } catch { return { enabled: false, scopeMode: 'selected' }; }
+}
+function selectedIndexedDbScope() {
+    try {
+        const scope = JSON.parse(localStorage.getItem(indexedDbScopeKey()) || 'null');
+        if (scope?.kind === 'databases' && Array.isArray(scope.names)) return { kind: 'databases', names: [...new Set(scope.names.filter(name => typeof name === 'string'))] };
+        if (scope?.kind === 'items' && Array.isArray(scope.items)) return { kind: 'items', items: scope.items.filter(item => item
+            && typeof item.database === 'string' && (item.store === undefined || typeof item.store === 'string')
+            && (item.keyToken === undefined || typeof item.keyToken === 'string')) };
+    } catch { /* Invalid selection stays empty instead of expanding to all databases. */ }
+    return { kind: 'items', items: [] };
+}
+function indexedDbScope() {
+    return indexedDbConfig().scopeMode === 'all' ? { kind: 'all' } : selectedIndexedDbScope();
+}
+function indexedDbScopeConfigured(scope = indexedDbScope()) {
+    return scope.kind === 'all' || (scope.kind === 'databases' && scope.names.length > 0)
+        || (scope.kind === 'items' && scope.items.length > 0);
+}
+function indexedDbBaselineKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-baseline'; }
+function indexedDbCommitIntentKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-commit-intent'; }
+function indexedDbBackupIntentKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-backup-intent'; }
+function readIndexedDbBaseline() {
+    try { return JSON.parse(localStorage.getItem(indexedDbBaselineKey()) || 'null'); } catch { return null; }
+}
+function writeIndexedDbBaseline(value) { localStorage.setItem(indexedDbBaselineKey(), JSON.stringify(value)); }
+function indexedDbArchiveCount(archive) {
+    return archive.databases.reduce((sum, db) => sum + db.stores.reduce((storeSum, store) => storeSum + store.records.length, 0), 0);
+}
+async function indexedDbArchiveHash(archive) {
+    const stable = { ...archive, createdAt: '' };
+    return digestHex(new TextEncoder().encode(serializeIndexedDbArchive(stable)));
+}
+async function indexedDbSyncHash(archive) {
+    // Native database versions are device-local migration counters. The
+    // transferable schema (stores/indexes) is fingerprinted separately, so a
+    // harmless version-number difference does not create a false conflict.
+    const stable = { ...archive, createdAt: '', databases: archive.databases.map(({ version, ...database }) => database) };
+    return digestHex(new TextEncoder().encode(serializeIndexedDbArchive(stable)));
+}
+async function backupIndexedDbArchive(archive, reason) {
+    const archiveHash = await indexedDbArchiveHash(archive);
+    let intent;
+    try { intent = JSON.parse(localStorage.getItem(indexedDbBackupIntentKey()) || 'null'); } catch { intent = null; }
+    if (!intent || intent.reason !== reason || intent.archiveHash !== archiveHash) {
+        intent = { reason, archiveHash, operationId: randomId('idb_backup') };
+        localStorage.setItem(indexedDbBackupIntentKey(), JSON.stringify(intent));
+    }
+    const submit = async () => {
+        try {
+            return await uploadIndexedDbArchive(request, archive, { kind: 'backup', reason, operationId: intent.operationId, source: archiveSource() });
+        } catch (error) {
+            if (!(error instanceof TypeError)) throw error;
+            return uploadIndexedDbArchive(request, archive, { kind: 'backup', reason, operationId: intent.operationId, source: archiveSource() });
+        }
+    };
+    let result = await submit();
+    // An uncertain retry can arrive after five newer backups have evicted the
+    // original slot. Do not proceed as if a rescue snapshot still existed.
+    if (result.retained === false) {
+        intent = { reason, archiveHash, operationId: randomId('idb_backup') };
+        localStorage.setItem(indexedDbBackupIntentKey(), JSON.stringify(intent));
+        result = await submit();
+    }
+    if (result.retained === false) throw new IndexedDbError('indexedDbBackupNotFound');
+    localStorage.removeItem(indexedDbBackupIntentKey());
+    return result;
+}
+async function fetchIndexedDbState() {
+    return downloadIndexedDbArchive(request, { metadataPath: '/indexeddb/state', chunkPath: index => `/indexeddb/state/chunks/${index}` });
+}
+
+function indexedDbScopeContains(scope, database, store, keyToken) {
+    if (!scope || scope.kind === 'all') return true;
+    if (scope.kind === 'databases') return scope.names.includes(database);
+    return scope.kind === 'items' && scope.items.some(item => item.database === database
+        && (item.store === undefined || item.store === store) && (item.keyToken === undefined || item.keyToken === keyToken));
+}
+
+async function rollbackIndexedDbSnapshot(before, scope) {
+    const current = await snapshotIndexedDB({ scope, allowOversize: true, tolerateUnsupported: true });
+    const previous = new Set(before.databases.flatMap(database => database.stores.flatMap(store => store.records.map(record =>
+        JSON.stringify([database.name, store.name, JSON.stringify(record.key)])))));
+    const additions = current.databases.flatMap(database => database.stores.flatMap(store => store.records
+        .filter(record => indexedDbScopeContains(scope, database.name, store.name, JSON.stringify(record.key))
+            && !previous.has(JSON.stringify([database.name, store.name, JSON.stringify(record.key)])))
+        .map(record => ({ database: database.name, store: store.name, keyToken: JSON.stringify(record.key) }))));
+    if (additions.length) await deleteIndexedDbItems(additions);
+    await mergeIndexedDbArchive(before, { scope });
+    const restored = await snapshotIndexedDB({ scope, allowOversize: true, tolerateUnsupported: true });
+    const schema = archive => JSON.stringify(archive.databases.map(database => ({ name: database.name, stores: database.stores.map(store => ({
+        name: store.name, keyPath: store.keyPath, autoIncrement: store.autoIncrement, indexes: store.indexes,
+    })) })));
+    if (schema(before) !== schema(restored)) throw new IndexedDbError('indexedDbRollbackFailed', { reason: 'schema-cannot-be-removed' });
+}
+
+async function syncIndexedDb(direction, { automaticRun = false, force = false, scopeOverride, onApplied, onBeforeApply } = {}) {
+    if (!indexedDbConfig().enabled && !force) return { skipped: 'disabled' };
+    if (!['upload', 'download'].includes(direction)) throw new IndexedDbError('indexedDbInvalidTransfer');
+    const scope = scopeOverride || indexedDbScope();
+    if (!indexedDbScopeConfigured(scope)) throw new IndexedDbError('indexedDbScopeEmpty');
+    const health = await request('/health');
+    if (!health.capabilities?.includes('indexeddb-sync-v1') || !health.capabilities?.includes('indexeddb-chunks-v1')) throw new IndexedDbError('indexedDbBackendMissing');
+    const before = await snapshotIndexedDB({ scope: { kind: 'all' } });
+    const local = selectIndexedDbArchive(before, scope);
+    const remoteTransfer = await fetchIndexedDbState();
+    const remote = selectIndexedDbArchive(remoteTransfer.archive, scope);
+    const archiveHash = await indexedDbArchiveHash(local);
+    const localHash = await indexedDbSyncHash(local);
+    const remoteHash = await indexedDbSyncHash(remote);
+    let baseline = readIndexedDbBaseline();
+    if (baseline?.scope !== JSON.stringify(scope)) baseline = null;
+    if (localHash === remoteHash) {
+        writeIndexedDbBaseline({ scope: JSON.stringify(scope), localHash, remoteHash, revision: remoteTransfer.metadata.revision, updatedAt: new Date().toISOString() });
+        return { skipped: 'equal' };
+    }
+    const localChanged = baseline ? baseline.localHash !== localHash : indexedDbArchiveCount(local) > 0;
+    const remoteChanged = baseline ? baseline.remoteHash !== remoteHash : indexedDbArchiveCount(remote) > 0;
+
+    if (automaticRun && baseline && localChanged && remoteChanged && localHash !== remoteHash) {
+        const choice = await resolveAutoConflict({ local: indexedDbArchiveCount(local), remote: indexedDbArchiveCount(remote), changes: Math.max(indexedDbArchiveCount(local), indexedDbArchiveCount(remote)), indexeddb: true });
+        if (choice === 'later') throw new IndexedDbError('indexedDbConflict');
+        direction = choice;
+    } else if (automaticRun && !baseline && localChanged && remoteChanged && localHash !== remoteHash) {
+        const choice = await resolveAutoConflict({ local: indexedDbArchiveCount(local), remote: indexedDbArchiveCount(remote), changes: Math.max(indexedDbArchiveCount(local), indexedDbArchiveCount(remote)), indexeddb: true });
+        if (choice === 'later') throw new IndexedDbError('indexedDbConflict');
+        direction = choice;
+    } else if (automaticRun && direction === 'upload' && baseline && remoteChanged && localHash !== remoteHash) {
+        const choice = await resolveAutoConflict({ local: indexedDbArchiveCount(local), remote: indexedDbArchiveCount(remote), changes: Math.max(indexedDbArchiveCount(local), indexedDbArchiveCount(remote)), indexeddb: true });
+        if (choice === 'later') throw new IndexedDbError('indexedDbConflict');
+        direction = choice;
+    } else if (automaticRun && direction === 'download' && baseline && localChanged && remoteChanged && localHash !== remoteHash) {
+        const choice = await resolveAutoConflict({ local: indexedDbArchiveCount(local), remote: indexedDbArchiveCount(remote), changes: Math.max(indexedDbArchiveCount(local), indexedDbArchiveCount(remote)), indexeddb: true });
+        if (choice === 'later') throw new IndexedDbError('indexedDbConflict');
+        direction = choice;
+    }
+
+    if (automaticRun && direction === 'download' && baseline && localChanged && !remoteChanged) {
+        // Keep the old baseline so a later automatic-upload choice still sees this local-only change.
+        return { skipped: 'local-only-change' };
+    }
+    if (automaticRun && direction === 'upload' && !localChanged) return { skipped: 'unchanged' };
+    if (automaticRun && direction === 'download' && !remoteChanged) return { skipped: 'unchanged' };
+    if (automaticRun && !baseline && direction === 'upload' && indexedDbArchiveCount(local) === 0) return { skipped: 'empty' };
+    if (automaticRun && !baseline && direction === 'download' && indexedDbArchiveCount(remote) === 0) return { skipped: 'empty' };
+
+    // Preflight the post-merge archive before writing a rescue backup or
+    // mutating either side. Downloads retain local-only rows, so checking only
+    // the transferred server archive would miss a locally oversized result.
+    const mergedPreview = direction === 'upload'
+        ? mergeArchiveObjects(remoteTransfer.archive, local, scope)
+        : mergeArchiveObjects(before, remoteTransfer.archive, scope);
+    serializeIndexedDbArchive(mergedPreview);
+
+    await onBeforeApply?.(direction);
+    await backupIndexedDbArchive(before, direction);
+    let committedRevision = remoteTransfer.metadata.revision;
+    if (direction === 'upload') {
+        const current = await request('/indexeddb/state');
+        if (current.revision !== remoteTransfer.metadata.revision || current.digest !== remoteTransfer.metadata.digest) throw new IndexedDbError('indexedDbRevisionConflict');
+        let intent;
+        try { intent = JSON.parse(localStorage.getItem(indexedDbCommitIntentKey()) || 'null'); } catch { intent = null; }
+        if (!intent || intent.archiveHash !== archiveHash || intent.scope !== JSON.stringify(scope)) {
+            intent = { archiveHash, scope: JSON.stringify(scope), operationId: randomId('idb_commit'), expectedRevision: current.revision };
+            localStorage.setItem(indexedDbCommitIntentKey(), JSON.stringify(intent));
+        }
+        let receipt;
+        try {
+            receipt = await uploadIndexedDbArchive(request, local, { kind: 'commit', reason: 'upload', operationId: intent.operationId,
+                expectedRevision: intent.expectedRevision, source: archiveSource(), beforeFinish: () => onBeforeApply?.(direction) });
+        } catch (error) {
+            if (error instanceof TypeError) {
+                try {
+                    receipt = await uploadIndexedDbArchive(request, local, { kind: 'commit', reason: 'upload', operationId: intent.operationId,
+                        expectedRevision: intent.expectedRevision, source: archiveSource(), beforeFinish: () => onBeforeApply?.(direction) });
+                } catch (retryError) {
+                    if (retryError.code === 'indexedDbRevisionConflict') localStorage.removeItem(indexedDbCommitIntentKey());
+                    throw retryError;
+                }
+            } else {
+                if (error.code === 'indexedDbRevisionConflict') localStorage.removeItem(indexedDbCommitIntentKey());
+                throw error;
+            }
+        }
+        if (receipt.revision !== intent.expectedRevision + 1
+            || (current.revision !== intent.expectedRevision && current.revision !== receipt.revision)) {
+            localStorage.removeItem(indexedDbCommitIntentKey());
+            throw new IndexedDbError('indexedDbRevisionConflict');
+        }
+        committedRevision = receipt.revision;
+        localStorage.removeItem(indexedDbCommitIntentKey());
+    } else {
+        const latest = await request('/indexeddb/state');
+        if (latest.revision !== remoteTransfer.metadata.revision || latest.digest !== remoteTransfer.metadata.digest) throw new IndexedDbError('indexedDbRevisionConflict');
+        await onBeforeApply?.(direction);
+        try { await mergeIndexedDbArchive(remoteTransfer.archive, { scope }); }
+        catch (error) {
+            try { await rollbackIndexedDbSnapshot(before, scope); }
+            catch (rollbackError) {
+                throw new IndexedDbError('indexedDbRollbackFailed', {
+                    cause: error?.code || error?.message, rollback: rollbackError?.code || rollbackError?.message,
+                });
+            }
+            throw error;
+        }
+    }
+    const after = direction === 'upload' ? local : await snapshotIndexedDB({ scope });
+    const afterHash = direction === 'upload' ? localHash : await indexedDbSyncHash(after);
+    const changed = direction === 'download' && afterHash !== localHash;
+    if (changed) onApplied?.(remoteTransfer.metadata.revision);
+    const remoteAfter = direction === 'upload' ? mergedPreview : remoteTransfer.archive;
+    writeIndexedDbBaseline({ scope: JSON.stringify(scope), localHash: afterHash,
+        remoteHash: await indexedDbSyncHash(selectIndexedDbArchive(remoteAfter, scope)), revision: committedRevision,
+        updatedAt: new Date().toISOString() });
+    const status = document.querySelector('#dss_indexeddb_status');
+    if (status) status.textContent = msg(direction === 'upload' ? 'indexedDbUploadSuccess' : 'indexedDbDownloadSuccess', { count: indexedDbArchiveCount(after) });
+    return { direction, records: indexedDbArchiveCount(after), revision: committedRevision,
+        changed };
+}
+
+async function mutateIndexedDb(work, reason, scope = { kind: 'all' }, expectedHash = '') {
+    return coordinated(async () => {
+        if (operationInFlight) throw new StorageError('operationBusy');
+        setOperationState('applying', true);
+        let before, mutationStarted = false;
+        try {
+            const fullRescue = getSettings().backupBeforeChanges;
+            before = await snapshotIndexedDB({ scope: fullRescue ? { kind: 'all' } : scope });
+            if (expectedHash && await indexedDbSyncHash(selectIndexedDbArchive(before, scope)) !== expectedHash) {
+                throw new IndexedDbError('indexedDbStalePreview');
+            }
+            if (fullRescue) await backupIndexedDbArchive(before, reason);
+            mutationStarted = true;
+            return await work(before);
+        } catch (error) {
+            if (before && mutationStarted) {
+                try { await rollbackIndexedDbSnapshot(before, scope); }
+                catch (rollbackError) {
+                    throw new IndexedDbError('indexedDbRollbackFailed', { cause: error?.code || error?.message, rollback: rollbackError?.code || rollbackError?.message });
+                }
+            }
+            throw error;
+        } finally {
+            setOperationState('manual-ready', false);
+        }
+    });
 }
 
 async function request(path, options = {}) {
@@ -119,7 +401,7 @@ async function request(path, options = {}) {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-        if (body?.code) throw Object.assign(new StorageError(body.code), { status: response.status });
+        if (body?.code) throw Object.assign(new StorageError(body.code, body.details || {}), { status: response.status });
         if (response.status === 404 && path.startsWith('/backups')) throw new StorageError('backupBackendMissing');
         if (response.status === 404) {
             throw Object.assign(new Error(tr(
@@ -147,7 +429,7 @@ async function requestFullState() {
 }
 
 async function syncRequest(path, options = {}, fullStorage = filterOptions().fullStorage) {
-    if (!fullStorage) return request(path, options);
+    if (!fullStorage && !filterOptions().selectedScope) return request(path, options);
     if (path === '/state') return requestFullState();
     if (path.startsWith('/commits/')) return request(path.replace('/commits/', '/full-commits/'), options);
     if (path === '/commit') return request('/full-commit', options);
@@ -178,9 +460,10 @@ function restorePullResult() {
         diagnostics.failedWrites = Math.max(0, Number(result.failed) || 0);
         diagnostics.lastAction = 'download';
         diagnostics.lastSyncAt = String(result.at || '');
-        diagnostics.lastError = result.failed
-            ? formatText('dss.error.storageWriteFailed', '{count} settings could not be written to browser storage.', { count: result.failed })
-            : '';
+        diagnostics.lastError = [
+            result.failed ? formatText('dss.error.storageWriteFailed', '{count} settings could not be written to browser storage.', { count: result.failed }) : '',
+            String(result.indexedDbError || ''),
+        ].filter(Boolean).join('\n');
     } catch {
         sessionStorage.removeItem(PULL_RESULT_KEY);
     }
@@ -193,6 +476,15 @@ function setOperationState(status, inFlight) {
         button.disabled = inFlight;
     }
     renderStatus();
+}
+
+function saveIndexedDbConfig(patch) {
+    const value = { ...indexedDbConfig(), ...patch };
+    localStorage.setItem(indexedDbConfigKey(), JSON.stringify(value));
+    const enabled = document.querySelector('#dss_indexeddb_enabled');
+    const mode = document.querySelector('#dss_indexeddb_scope_mode');
+    if (enabled) enabled.checked = value.enabled;
+    if (mode) mode.value = value.scopeMode;
 }
 
 function archiveSource() {
@@ -243,12 +535,40 @@ async function applyLocalPlanLocked(plan, reason, { forceBackup = false } = {}) 
     }
 }
 
-async function showManager() {
+async function showManager(initialTab = 'local') {
     if (managerOpen || operationInFlight) return;
     managerOpen = true;
     try {
         await openStorageManager({
             getSettings, filterOptions, source: archiveSource,
+            setSyncScope: scope => {
+                if (scope.kind === 'keys') {
+                    scope = { kind: 'keys', keys: [...new Set(scope.keys.filter(key => !isInternalKey(key)))] };
+                    if (!scope.keys.length) throw new StorageError('selectedScopeEmpty');
+                }
+                localStorage.setItem(selectedScopeKey(), JSON.stringify(scope));
+                localStorage.setItem(fullStorageKey(), 'selected');
+                const mode = document.querySelector('#dss_storage_mode');
+                if (mode) mode.value = 'selected';
+                refreshSnapshot();
+            },
+            snapshotIndexedDb: (scope, options) => snapshotIndexedDB({ scope, ...options }),
+            indexedDbScope,
+            setIndexedDbScope: scope => {
+                if (scope?.kind !== 'items' || !Array.isArray(scope.items) || !scope.items.length) throw new IndexedDbError('indexedDbScopeEmpty');
+                localStorage.setItem(indexedDbScopeKey(), JSON.stringify(scope));
+                saveIndexedDbConfig({ scopeMode: 'selected' });
+            },
+            listIndexedDbBackups: () => request('/indexeddb/backups'),
+            getIndexedDbBackup: async id => (await downloadIndexedDbArchive(request, {
+                metadataPath: `/indexeddb/backups/${encodeURIComponent(id)}`,
+                chunkPath: index => `/indexeddb/backups/${encodeURIComponent(id)}/chunks/${index}`,
+            })).archive,
+            importIndexedDb: (archive, reason = 'import', expectedHash = '') => mutateIndexedDb(async () => mergeIndexedDbArchive(archive, { scope: archive.scope }), reason, archive.scope, expectedHash),
+            hashIndexedDb: indexedDbSyncHash,
+            removeIndexedDb: items => mutateIndexedDb(async () => deleteIndexedDbItems(items), 'delete', {
+                kind: 'items', items: items.map(({ database, store, keyToken }) => ({ database, store, keyToken })),
+            }),
             isBusy: () => operationInFlight,
             setBackupBeforeChanges: value => { getSettings().backupBeforeChanges = value; saveSettingsDebounced(); },
             applyLocalPlan,
@@ -261,7 +581,7 @@ async function showManager() {
             listBackups: () => request('/backups'),
             getBackup: id => request('/backups/' + encodeURIComponent(id)),
             onChanged: refreshSnapshot,
-        });
+        }, { initialTab });
     } catch (error) {
         globalThis.toastr?.error(errorText(error), tr('dss.panel.title', 'Device Settings Sync'));
     } finally { managerOpen = false; }
@@ -277,23 +597,25 @@ async function confirmManualAction(title, message, okButton) {
 }
 
 async function confirmManualPull() {
+    const extra = indexedDbConfig().enabled ? '\n\n' + msg('indexedDbSyncConfirmation') : '';
     return confirmManualAction(
         tr('dss.pull.title', 'Sync from server'),
-        isFullStorage() ? msg('fullPullConfirm') : tr(
+        (localStorageMode() === 'full' ? msg('fullPullConfirm') : localStorageMode() === 'selected' ? msg('selectedPullConfirm') : tr(
             'dss.pull.confirmMessage',
             'This will overwrite syncable settings on this device with the server settings. Local changes that have not been uploaded may be lost, and the page will reload automatically when complete. A full localStorage snapshot, including caches and credentials, will first be saved to this account on the server. Continue?',
-        ),
+        )) + extra,
         tr('dss.pull.confirmButton', 'Sync now'),
     );
 }
 
 async function confirmManualPush() {
+    const extra = indexedDbConfig().enabled ? '\n\n' + msg('indexedDbSyncConfirmation') : '';
     return confirmManualAction(
         tr('dss.push.title', 'Upload local settings'),
-        isFullStorage() ? msg('fullPushConfirm') : tr(
+        (localStorageMode() === 'full' ? msg('fullPushConfirm') : localStorageMode() === 'selected' ? msg('selectedPushConfirm') : tr(
             'dss.push.confirmMessage',
             'This will replace the server sync data with settings from this device. Portable settings that exist on the server but were deleted locally will also be deleted. A full localStorage snapshot, including caches and credentials, will first be saved to this account on the server. Continue?',
-        ),
+        )) + extra,
         tr('dss.push.confirmButton', 'Upload now'),
     );
 }
@@ -307,16 +629,18 @@ async function manualPullLocked({ reload = true } = {}) {
     setOperationState('downloading', true);
     try {
         const options = filterOptions();
-        if (options.fullStorage) await requireFullSupport();
-        const original = options.fullStorage ? readStorage(localStorage) : null;
+        if (!options.selectedScopeConfigured) throw new StorageError('selectedScopeEmpty');
+        if (options.fullStorage || options.selectedScope) await requireFullSupport();
+        const scopedStorage = options.fullStorage || options.selectedScope;
+        const original = scopedStorage ? readStorage(localStorage) : null;
         await backupCurrentStorage('download');
-        const state = options.fullStorage ? await requestFullState() : await request('/state');
+        const state = scopedStorage ? await requestFullState() : await request('/state');
         let result;
-        if (options.fullStorage) {
+        if (scopedStorage) {
             const before = readStorage(localStorage);
             const sameUserData = [...original].every(([key, value]) => isInternalKey(key) || before.get(key) === value)
                 && [...before].every(([key, value]) => isInternalKey(key) || original.get(key) === value);
-            if (!sameUserData || filterOptions().fullStorage !== options.fullStorage) throw new StorageError('stalePreview');
+            if (!sameUserData || JSON.stringify(filterOptions()) !== JSON.stringify(options)) throw new StorageError('stalePreview');
             const changes = planRemote(before, state, options).changes;
             result = { changed: changes.length, skipped: 0, failed: 0 };
             if (changes.length) applyPlan(localStorage, { before, changes });
@@ -332,20 +656,28 @@ async function manualPullLocked({ reload = true } = {}) {
             : '';
         refreshSnapshot();
         if (!result.failed) await automatic?.remember(snapshotPortableStorage(localStorage, options).values, state).catch(error => automatic.fatal(error));
+        let indexedDbError = null;
+        if (indexedDbConfig().enabled) {
+            try { await syncIndexedDb('download'); }
+            catch (error) {
+                indexedDbError = error;
+                if (!reload) throw error;
+            }
+        }
 
         if (reload) {
             sessionStorage.setItem(PULL_RESULT_KEY, JSON.stringify({
                 revision: diagnostics.revision,
                 changed: result.changed,
                 failed: result.failed,
+                indexedDbError: indexedDbError ? errorText(indexedDbError) : '',
                 at,
             }));
             diagnostics.status = 'reloading';
+            if (indexedDbError) diagnostics.lastError = [diagnostics.lastError, errorText(indexedDbError)].filter(Boolean).join('\n');
             renderStatus();
-            globalThis.toastr?.success(
-                tr('dss.toast.pullSuccess', 'Server settings downloaded. Reloading to apply them completely.'),
-                tr('dss.panel.title', 'Device Settings Sync'),
-            );
+            if (indexedDbError) globalThis.toastr?.warning(msg('pullPartialIndexedDb', { error: errorText(indexedDbError) }), tr('dss.panel.title', 'Device Settings Sync'));
+            else globalThis.toastr?.success(tr('dss.toast.pullSuccess', 'Server settings downloaded. Reloading to apply them completely.'), tr('dss.panel.title', 'Device Settings Sync'));
             setTimeout(() => location.reload(), 350);
         } else {
             setOperationState('manual-ready', false);
@@ -368,7 +700,8 @@ async function manualPushLocked() {
     setOperationState('saving', true);
     try {
         const options = filterOptions();
-        if (options.fullStorage) await requireFullSupport();
+        if (!options.selectedScopeConfigured) throw new StorageError('selectedScopeEmpty');
+        if (options.fullStorage || options.selectedScope) await requireFullSupport();
         await backupCurrentStorage('upload');
         // SillyTavern's native account settings and extension_settings live in the
         // normal account settings file. Save them first, then upload portable
@@ -376,17 +709,19 @@ async function manualPushLocked() {
         await saveSettings();
         if (JSON.stringify(filterOptions()) !== JSON.stringify(options)) throw new StorageError('stalePreview');
         const snapshot = refreshSnapshot();
-        if (options.fullStorage) {
+        if (options.fullStorage || options.selectedScope) {
             const remote = await requestFullState();
             const remoteValues = serverStateToPortableValues(remote, options);
             const changes = diffSnapshots(remoteValues, snapshot.values);
-            const state = changes.length || !remote.seeded
+                const state = changes.length || !remote.seeded
                 ? await request('/full-commit', { method: 'POST', body: JSON.stringify({
                     operationId: randomId('operation'), expectedRevision: remote.revision, deviceId: getDeviceId(),
+                    scope: options.selectedScope || { kind: 'full' },
                     entries: sortedEntries(snapshot.values).map(([key, value]) => ({ key, value })),
                 }) }) : remote;
             diagnostics.revision = state.revision;
             diagnostics.pushedMutations += changes.length;
+            if (indexedDbConfig().enabled) await syncIndexedDb('upload');
             diagnostics.lastAction = 'upload';
             diagnostics.lastSyncAt = new Date().toISOString();
             diagnostics.lastError = '';
@@ -420,6 +755,7 @@ async function manualPushLocked() {
 
         diagnostics.revision = Math.max(0, Number(state?.revision) || diagnostics.revision);
         diagnostics.pushedMutations += mutations.length;
+        if (indexedDbConfig().enabled) await syncIndexedDb('upload');
         diagnostics.lastAction = 'upload';
         diagnostics.lastSyncAt = new Date().toISOString();
         diagnostics.lastError = '';
@@ -481,34 +817,71 @@ function bindPanel() {
     if (!excludes) return;
     const settings = getSettings();
     excludes.value = settings.additionalExcludes;
+    const initialIdbConfig = indexedDbConfig();
+    document.querySelector('#dss_indexeddb_enabled').checked = initialIdbConfig.enabled;
+    document.querySelector('#dss_indexeddb_scope_mode').value = initialIdbConfig.scopeMode;
     const menu = document.querySelector('#dss_settings_menu');
     const toggle = document.querySelector('#dss_settings_toggle');
     toggle?.addEventListener('click', () => {
         excludes.value = getSettings().additionalExcludes;
-        document.querySelector('#dss_full_storage').checked = isFullStorage();
+        document.querySelector('#dss_storage_mode').value = localStorageMode();
         document.querySelector('#dss_before_changes').checked = getSettings().backupBeforeChanges === true;
         menu.hidden = !menu.hidden;
         settingsOpen = !menu.hidden;
         toggle.setAttribute('aria-expanded', String(settingsOpen));
         if (!settingsOpen) automatic?.configure();
     });
-    const full = document.querySelector('#dss_full_storage');
-    full.checked = isFullStorage();
-    full.addEventListener('change', async () => {
-        const checked = full.checked;
-        full.disabled = true;
+    const mode = document.querySelector('#dss_storage_mode');
+    mode.value = localStorageMode();
+    mode.addEventListener('change', async () => {
+        const selected = mode.value;
+        mode.disabled = true;
         try {
             if (operationInFlight || automatic?.running || automatic?.state().intent) throw new StorageError('operationBusy');
-            if (checked && !(await confirmManualAction(msg('fullStorageTitle'), msg('fullStorageConsent'), msg('fullStorageTitle')))) return;
-            localStorage.setItem(fullStorageKey(), checked ? '1' : '0');
+            if (selected === 'full' && !(await confirmManualAction(msg('fullStorageTitle'), msg('fullStorageConsent'), msg('fullStorageTitle')))) return;
+            if (selected === 'selected' && !(await confirmManualAction(msg('selectedStorageTitle'), msg('selectedStorageConsent'), msg('selectedStorageTitle')))) return;
+            localStorage.setItem(fullStorageKey(), selected);
+        if (selected === 'selected' && !selectedScopeKeyExists()) globalThis.toastr?.warning(msg('selectedScopeEmpty'));
             refreshSnapshot();
             if (automatic?.prefs().download) { automatic.entry = true; automatic.configure(); }
         } catch (error) { globalThis.toastr?.error(errorText(error)); }
-        finally { full.checked = isFullStorage(); full.disabled = false; }
+        finally { mode.value = localStorageMode(); mode.disabled = false; }
     });
     const before = document.querySelector('#dss_before_changes');
     before.checked = settings.backupBeforeChanges === true;
     before.addEventListener('change', () => { getSettings().backupBeforeChanges = before.checked; saveSettingsDebounced(); });
+
+    const idbEnabled = document.querySelector('#dss_indexeddb_enabled');
+    idbEnabled.addEventListener('change', async () => {
+        const enabled = idbEnabled.checked;
+        idbEnabled.disabled = true;
+        try {
+            if (enabled && !(await confirmManualAction(msg('indexedDbTitle'), msg('indexedDbConsent'), msg('indexedDbTitle')))) return;
+            if (enabled) {
+                const health = await request('/health');
+                if (!health.capabilities?.includes('indexeddb-sync-v1') || !health.capabilities?.includes('indexeddb-chunks-v1')) {
+                    throw new IndexedDbError('indexedDbBackendMissing');
+                }
+                if (!indexedDbScopeConfigured()) {
+                    showManager('indexeddb').catch(error => globalThis.toastr?.error(errorText(error)));
+                    throw new IndexedDbError('indexedDbScopeEmpty');
+                }
+            }
+            saveIndexedDbConfig({ enabled });
+        } catch (error) { globalThis.toastr?.error(errorText(error)); }
+        finally { idbEnabled.disabled = false; idbEnabled.checked = indexedDbConfig().enabled; }
+    });
+    const idbScopeMode = document.querySelector('#dss_indexeddb_scope_mode');
+    idbScopeMode.addEventListener('change', () => {
+        const scopeMode = idbScopeMode.value === 'all' ? 'all' : 'selected';
+        if (scopeMode === 'selected' && !indexedDbScopeConfigured(selectedIndexedDbScope())) {
+            saveIndexedDbConfig({ scopeMode, enabled: false });
+            globalThis.toastr?.warning(msg('indexedDbScopeEmpty'));
+            showManager('indexeddb').catch(error => globalThis.toastr?.error(errorText(error)));
+            return;
+        }
+        saveIndexedDbConfig({ scopeMode });
+    });
 
     excludes.addEventListener('change', () => {
         getSettings().additionalExcludes = excludes.value;
@@ -522,6 +895,7 @@ function bindPanel() {
         if (await confirmManualPush()) manualPush().catch(() => {});
     });
     document.querySelector('#dss_manage')?.addEventListener('click', showManager);
+    document.querySelector('#dss_idb_manage')?.addEventListener('click', () => showManager('indexeddb'));
     document.querySelector('#dss_reload')?.addEventListener('click', () => location.reload());
     document.querySelector('#dss_copy')?.addEventListener('click', async () => {
         const safe = { ...diagnostics, automatic: automatic?.describe(), device: getDeviceId(false).slice(-8) };
@@ -555,8 +929,20 @@ function createPanel() {
                 <button id="dss_settings_toggle" class="menu_button" type="button" aria-expanded="false" aria-controls="dss_settings_menu" data-i18n="dss.manager.settingsTitle">Settings</button>
                 <div id="dss_settings_menu" hidden>
                     <div id="dss_auto"></div>
-                    <label class="dss_check"><input id="dss_full_storage" type="checkbox"><span data-i18n="dss.manager.fullStorageTitle">Sync all localStorage</span></label>
+                    <label for="dss_storage_mode" data-i18n="dss.manager.storageMode">localStorage synchronization range</label>
+                    <select id="dss_storage_mode" class="text_pole">
+                        <option value="portable" data-i18n="dss.manager.modePortable">Portable settings only</option>
+                        <option value="selected" data-i18n="dss.manager.modeSelected">Only selected keys / folders</option>
+                        <option value="full" data-i18n="dss.manager.modeFull">All localStorage</option>
+                    </select>
                     <small data-i18n="dss.manager.fullStorageHint">Includes cache, history and large values; sync-internal keys stay on this device. Separate server data, 32 MiB limit.</small>
+                    <label class="dss_check"><input id="dss_indexeddb_enabled" type="checkbox"><span data-i18n="dss.manager.indexedDbEnable">Enable IndexedDB synchronization</span></label>
+                    <label for="dss_indexeddb_scope_mode" data-i18n="dss.manager.indexedDbScopeMode">IndexedDB scope</label>
+                    <select id="dss_indexeddb_scope_mode" class="text_pole">
+                        <option value="selected" data-i18n="dss.manager.indexedDbSelected">Selected databases/items</option>
+                        <option value="all" data-i18n="dss.manager.indexedDbAll">All same-origin databases</option>
+                    </select>
+                    <small data-i18n="dss.manager.indexedDbHint">Merge-only; local-only records are preserved. 128 MiB per archive using 1 MiB chunks.</small>
                     <label class="dss_check"><input id="dss_before_changes" type="checkbox"><span data-i18n="dss.manager.beforeChanges">Also back up before import, restore or removal</span></label>
                     <label for="dss_excludes" data-i18n="dss.panel.excludesLabel">Additional localStorage keys to exclude (one per line; * wildcards supported)</label>
                     <textarea id="dss_excludes" rows="3" placeholder="example-cache:*" data-i18n="[placeholder]dss.panel.excludesPlaceholder"></textarea>
@@ -567,8 +953,10 @@ function createPanel() {
                     <button id="dss_reload" class="menu_button" data-i18n="dss.panel.reloadButton">Reload to apply</button>
                     <button id="dss_copy" class="menu_button" data-i18n="dss.panel.copyButton">Copy diagnostics</button>
                     <button id="dss_manage" class="menu_button" data-i18n="dss.manager.manager">Manage localStorage</button>
+                    <button id="dss_idb_manage" class="menu_button" data-i18n="dss.manager.indexedDbManager">Manage IndexedDB</button>
                 </div>
                 <p id="dss_capacity"></p>
+                <p id="dss_indexeddb_status" role="status"></p>
                 <pre id="dss_status"></pre>
             </div>
         </div>`;
@@ -626,7 +1014,9 @@ function renderAuto(state) {
 
 async function resolveAutoConflict(counts) {
     const root = document.createElement('div');
-    const description = document.createElement('p'); description.textContent = msg('autoConflictDetails', counts); root.append(description);
+    const description = document.createElement('p');
+    description.textContent = msg(counts.indexeddb ? 'indexedDbAutoConflictDetails' : 'autoConflictDetails', counts);
+    root.append(description);
     let choice = 'later';
     const popup = new Popup(root, POPUP_TYPE.TEXT, '', { okButton: msg('autoLater'), allowVerticalScrolling: true });
     for (const [value, label] of [['upload', 'autoKeepLocal'], ['download', 'autoUseServer']]) {
@@ -645,6 +1035,7 @@ async function initializeAutomatic() {
             request: syncRequest, options: filterOptions, persistDevice: () => getDeviceId(),
             busy: () => operationInFlight || managerOpen || settingsOpen,
             makeBackup, backup: sendBackup, conflict: resolveAutoConflict,
+            syncIndexedDb: (direction, options) => syncIndexedDb(direction, options),
             events: { eventSource, eventTypes: event_types },
             render: renderAuto, changed: refreshSnapshot,
             failure: error => globalThis.toastr?.error(errorText(error)),

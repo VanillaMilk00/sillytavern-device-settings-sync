@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { StorageError, isInternalKey, MAX_ARCHIVE_BYTES } from '../lib/storage-model.js';
+import { StorageError, isInternalKey, MAX_ARCHIVE_BYTES, inScope } from '../lib/storage-model.js';
 
 const FILE = 'device-settings-sync-full.json';
 const ID = /^[a-zA-Z0-9_-]{8,100}$/u;
@@ -20,14 +20,19 @@ export function commitFullState(current, input, now = new Date().toISOString()) 
     if (!input || !ID.test(input.operationId) || !ID.test(input.deviceId)
         || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0
         || !Array.isArray(input.entries)) throw new StorageError('invalidCommit');
+    const scope = input.scope ?? { kind: 'full' };
+    if (!(scope.kind === 'full' || (scope.kind === 'prefix' && typeof scope.prefix === 'string' && scope.prefix.length)
+        || (scope.kind === 'keys' && Array.isArray(scope.keys) && scope.keys.every(key => typeof key === 'string')))) {
+        throw new StorageError('invalidCommit');
+    }
     const entries = Object.create(null);
     for (const item of input.entries) {
         if (!item || typeof item.key !== 'string' || typeof item.value !== 'string'
-            || isInternalKey(item.key) || Object.hasOwn(entries, item.key)) throw new StorageError('invalidCommit');
+            || isInternalKey(item.key) || !inScope(item.key, scope) || Object.hasOwn(entries, item.key)) throw new StorageError('invalidCommit');
         entries[item.key] = item.value;
     }
     const digest = createHash('sha256').update(JSON.stringify({
-        deviceId: input.deviceId, expectedRevision: input.expectedRevision, entries: input.entries,
+        deviceId: input.deviceId, expectedRevision: input.expectedRevision, scope, entries: input.entries,
     })).digest('hex');
     const previous = fullReceipt(current, input.operationId);
     if (previous) {
@@ -36,8 +41,11 @@ export function commitFullState(current, input, now = new Date().toISOString()) 
     }
     if (current.revision !== input.expectedRevision) throw new StorageError('autoConflict');
     const receipt = { operationId: input.operationId, digest, revision: current.revision + 1, createdAt: now };
+    const combined = Object.create(null);
+    for (const [key, value] of Object.entries(current.entries || {})) if (!inScope(key, scope)) combined[key] = value;
+    for (const [key, value] of Object.entries(entries)) combined[key] = value;
     const state = {
-        schema: 1, revision: receipt.revision, seeded: true, updatedAt: now, entries,
+        schema: 1, revision: receipt.revision, seeded: true, updatedAt: now, entries: combined,
         receipts: [...current.receipts, receipt],
     };
     if (encoder.encode(JSON.stringify(state)).byteLength > MAX_ARCHIVE_BYTES) throw new StorageError('archiveTooLarge');

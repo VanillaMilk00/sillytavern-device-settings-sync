@@ -4,7 +4,7 @@
 
 讓同一個 SillyTavern 帳戶在手機、桌面及其他裝置之間，手動同步設定，並可選擇自動同步可攜式瀏覽器設定。
 
-目前版本：**1.7.0**。升級後必須**重啟 SillyTavern 伺服器插件**；僅重新整理瀏覽器不會載入完整同步 API。
+目前版本：**1.8.0**。升級後必須**重啟 SillyTavern 伺服器插件**；僅重新整理瀏覽器不會載入完整同步與 IndexedDB 分塊 API。
 
 ## 功能
 
@@ -20,16 +20,36 @@
 - 五個帳戶共用備份插槽：每次確認上傳／下載後，先保存本機完整 `localStorage`。
 - WizTree 風格的樹狀清單與容量方塊圖，支援搜尋、多選、容量排序及局部匯入／匯出／移除。
 - 顯示完整用量估算、選取容量與清理建議；不自動刪除資料。
+- localStorage 可選一般、全部或只同步選取的鍵／資料夾；明確選取的快取、歷史及大型值也會同步。
+- 可選啟用 IndexedDB 同步，並在資料庫、物件儲存區及紀錄層級管理、匯入、匯出與移除。
 
 第三方擴充存於 `localStorage` 的 OAuth token、登入憑證及 API 憑證會同步。瀏覽器 HttpOnly Cookie 與 SillyTavern 登入 Cookie 無法由擴充讀取，所以新裝置仍需先登入 SillyTavern 一次。
 
 ## 設定選單與完整 localStorage 同步
 
-在擴充面板按「設定」，可調整自動上傳、自動下載、匯入／還原／移除前備份、額外排除鍵，以及預設關閉的「同步完整 localStorage」。完整模式開關依目前網站、帳戶與瀏覽器裝置保留，不會傳到其他裝置；切換時需由各裝置自行決定。設定選單關閉時仍能從面板查看狀態與手動同步。
+在擴充面板按「設定」，可調整自動上傳、自動下載、匯入／還原／移除前備份、額外排除鍵及 localStorage 同步範圍。範圍設定依網站、帳戶與裝置保存在本機，不會傳到其他裝置。
+
+- **僅一般設定**（預設）：沿用既有快取、歷史、大型值、憑證及自訂排除規則。
+- **只同步選取項目**：先開啟「管理 localStorage」，勾選鍵或資料夾並按「使用選取項目作為同步範圍」。選中的快取、歷史及大型值會納入；同步器內部鍵永遠排除。下載只影響該範圍。
+- **同步全部 localStorage**：同步所有非內部鍵，包含快取、歷史、草稿、大型值及可能的憑證。
+
+選取範圍與完整模式使用獨立帳戶同步檔，大小上限為 32 MiB JSON。手動與自動上傳／下載均沿用此範圍；不會在未選取時把完整 localStorage 靜默納入。
 
 完整模式同時作用於手動和自動上傳／下載。它包含快取、歷史、草稿、大型值與可能的憑證；同步器內部鍵（包括裝置識別碼及排程）仍留在本機。完整模式與一般模式使用不同的帳戶私有伺服器同步檔，不會在切換時悄悄以其中一份覆蓋另一份；首次資料不同時，自動操作會詢問來源。完整同步檔上限 32 MiB JSON，超限拒絕且保留既有伺服器資料。真正套用前仍會先建立完整本機救援備份；下載會以完整快照取代本機非內部鍵，失敗時嘗試復原。
 
-這是 **localStorage** 模式，不包含 IndexedDB、Cookie 或其他瀏覽器儲存區。不同裝置的 localStorage 配額可能不同，完整資料在來源裝置可用，也可能無法寫入容量較小的目標裝置。額外排除規則與一般同步的單鍵上限只適用於一般模式。
+完整模式只涵蓋 **localStorage**，不包含 IndexedDB、Cookie 或其他瀏覽器儲存區。不同裝置的 localStorage 配額可能不同，完整資料在來源裝置可用，也可能無法寫入容量較小的目標裝置。額外排除規則與一般同步的單鍵上限只適用於一般模式。
+
+## IndexedDB 同步與管理（可選）
+
+在「設定」明確啟用 IndexedDB 同步後，既有的「上傳本機設定／從伺服器同步」及對應自動開關會一併處理 IndexedDB。此功能預設關閉，設定只保存在目前網站／帳戶／裝置。
+
+- 範圍可選「所選資料庫／項目」或「同源的所有資料庫」。在「管理 IndexedDB」選取資料庫、物件儲存區或個別紀錄，再按「使用選取項目作為同步範圍」；管理視窗也提供單獨匯入、匯出和移除。
+- 同步下載與伺服器上傳皆採合併：相同主鍵的紀錄以來源值更新，伺服器及本機的額外紀錄保留；同步本身不會刪除紀錄。刪除僅在本機管理視窗明確操作。
+- IndexedDB 有獨立的五格帳戶救援備份。每份傳輸／備份 JSON 上限 128 MiB，使用 1 MiB 分塊及完整性雜湊；瀏覽器必須支援 `indexedDB.databases()` 才能安全列出既有資料庫。
+- 會保留常見結構化資料型別、循環參照、Blob／File 與二進位值。無法安全序列化的值、資料庫結構衝突、鎖定或配額錯誤會明確停止，不會靜默略過。
+- 同步前保存完整本機 IndexedDB 快照；伺服器資料版本競爭會中止並提示重試。不同資料庫／物件儲存區的 IndexedDB 交易無法形成單一跨庫原子交易；若發生部分失敗，請使用 IndexedDB 五格備份還原。
+
+瀏覽器提供的 `navigator.storage.estimate()` 是整個來源的估算，並非 IndexedDB 專屬容量或保證上限。同步器不會嘗試清空或自行判定資料可刪除。
 
 ## 自動上傳與下載（可分別啟用）
 
@@ -163,7 +183,7 @@ docker exec sillytavern node /home/node/app/public/scripts/extensions/third-part
 
 若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，重啟容器後再試；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
 
-若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.7.0 後再重啟伺服器。
+若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.8.0 後再重啟伺服器。
 
 ## 使用
 
@@ -182,7 +202,7 @@ docker exec sillytavern node /home/node/app/public/scripts/extensions/third-part
 - 檔案位於登入帳戶私有資料目錄的 `device-settings-sync-backups/`，與 `device-settings-sync.json` 一般同步檔分開。
 - 索引保留不含設定值的操作識別碼、備份 ID 與摘要雜湊，用於跨重啟及淘汰後的重試去重；快照內容仍只保留五份。
 
-**備份只涵蓋 localStorage**，不是整個 SillyTavern 備份：不含帳戶設定檔、伺服器聊天檔、角色、Cookie、sessionStorage 或 IndexedDB。完整快照不套用一般同步排除規則，因此會包含 localStorage 內的快取、歷史、大型值與憑證。一般跨裝置同步仍沿用原本排除規則。
+**localStorage 備份只涵蓋 localStorage**，不是整個 SillyTavern 備份：不含帳戶設定檔、伺服器聊天檔、角色、Cookie、sessionStorage 或 IndexedDB。完整快照不套用一般同步排除規則，因此會包含 localStorage 內的快取、歷史、大型值與憑證。IndexedDB 使用另一套獨立五格備份；一般 localStorage 跨裝置同步仍沿用原本排除規則。
 
 ## 管理、匯入與匯出
 
@@ -236,10 +256,13 @@ JSON 檔案／備份請求上限為 **32 MiB**，超限拒絕且不修改既有�
 - `GET /backups`：最多五份摘要，不含設定值。
 - `POST /backups`：`{ operationId, reason, archive }`；`reason` 為 `upload`、`download`、`import`、`restore` 或 `delete`。
 - `GET /backups/:id`：僅讀取目前帳戶保留中的指定快照。
-- `GET /health`：能力標記包含 `backups-v1`、`atomic-sync-v1`、`full-storage-v1`；舊後端缺少所需能力時停止相關功能並提示更新／重啟。
+- `GET /health`：能力標記包含 `backups-v1`、`atomic-sync-v1`、`full-storage-v1`、`indexeddb-sync-v1`、`indexeddb-chunks-v1`；舊後端缺少所需能力時停止相關功能並提示更新／重啟。
 - `POST /commit`：`{ operationId, expectedRevision, deviceId, mutations }`，全部驗證後原子提交；版本競爭或識別碼內容不一致回傳 HTTP 409，同識別碼重試不重複套用。
 - `GET /commits/:id`：讀取本帳戶提交收據，用於恢復遺失回應。收據與資料一同寫入，計入既有 5 MiB 同步檔上限；單值限制與手動 API 相容性不變。
 - `GET /full-state`、`POST /full-commit`、`GET /full-commits/:id`：完整模式的獨立快照、原子版本提交及重試收據；最多 32 MiB JSON，與一般同步及五格救援備份分開。
+- `POST /indexeddb/transfers/start`、`PUT /indexeddb/transfers/:id/chunks/:index`、`POST /indexeddb/transfers/:id/finish`：分塊上傳及原子合併提交，最多 128 MiB，帳戶內版本控制並以操作識別碼去重。
+- `GET /indexeddb/state` 與 `/indexeddb/state/chunks/:index`：讀取帳戶伺服器快照及分塊。
+- `GET /indexeddb/backups`、`GET /indexeddb/backups/:id`、`GET /indexeddb/backups/:id/chunks/:index`：讀取 IndexedDB 專用五格救援備份摘要與封存內容；與 localStorage 備份槽分開。
 
 ## 開發與測試
 
