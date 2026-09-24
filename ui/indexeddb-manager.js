@@ -1,6 +1,6 @@
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../../../popup.js';
 import { bytes, msg, errorText } from '../lib/messages.js';
-import { MAX_INDEXEDDB_ARCHIVE_BYTES, parseIndexedDbArchive, serializeIndexedDbArchive, selectIndexedDbArchive } from '../lib/indexeddb-model.js';
+import { MAX_INDEXEDDB_ARCHIVE_BYTES, estimateJsonBytes, parseIndexedDbArchive, serializeIndexedDbArchive, selectIndexedDbArchive } from '../lib/indexeddb-model.js';
 
 function element(tag, text, className) {
     const node = document.createElement(tag);
@@ -19,8 +19,7 @@ function download(archive, filename = 'indexedDB-backup.json') {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function recordCount(archive) { return archive.databases.reduce((sum, db) => sum + db.stores.reduce((part, store) => part + store.records.length, 0), 0); }
-function textBytes(value) { return new TextEncoder().encode(value).byteLength; }
-function recordBytes(record) { return textBytes(JSON.stringify(record)); }
+function recordBytes(record) { return estimateJsonBytes(record); }
 function keyLabel(key) {
     if (key?.$type === 'date') return key.value || 'Invalid Date';
     if (key?.$type === 'array-buffer') return `ArrayBuffer (${atob(key.value).length} B)`;
@@ -53,7 +52,7 @@ async function chooseImportScope(archive, localArchive) {
             JSON.stringify([database.name, store.name, JSON.stringify(record.key)]))));
         const overwrites = incomingRecords.filter(key => existing.has(key)).length;
         summary.textContent = msg('indexedDbImportConfirm', { databases: preview.databases.length,
-            records: incomingRecords.length, size: bytes(textBytes(JSON.stringify(preview))),
+            records: incomingRecords.length, size: bytes(estimateJsonBytes(preview)),
             add: incomingRecords.length - overwrites, overwrite: overwrites });
     };
     const children = item => {
@@ -198,7 +197,7 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
         content.append(element('p', msg('indexedDbEnumerationHint'), 'dss_note'));
         return;
     }
-    const archiveSize = textBytes(JSON.stringify(archive));
+    const archiveSize = estimateJsonBytes(archive);
     const recordSizes = new Map();
     for (const database of archive.databases) for (const store of database.stores) for (const record of store.records) {
         recordSizes.set(JSON.stringify([database.name, store.name, JSON.stringify(record.key)]), recordBytes(record));

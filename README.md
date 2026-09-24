@@ -4,7 +4,7 @@
 
 讓同一個 SillyTavern 帳戶在手機、桌面及其他裝置之間，手動同步設定，並可選擇自動同步可攜式瀏覽器設定。
 
-目前版本：**1.8.0**。升級後必須**重啟 SillyTavern 伺服器插件**；僅重新整理瀏覽器不會載入完整同步與 IndexedDB 分塊 API。
+目前版本：**1.8.1**。升級後必須**重啟 SillyTavern 伺服器插件**；僅重新整理瀏覽器不會載入完整同步與 IndexedDB 分塊 API。
 
 ## 功能
 
@@ -183,7 +183,7 @@ docker exec sillytavern node /home/node/app/public/scripts/extensions/third-part
 
 若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，重啟容器後再試；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
 
-若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.8.0 後再重啟伺服器。
+若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.8.1 後再重啟伺服器。
 
 ## 使用
 

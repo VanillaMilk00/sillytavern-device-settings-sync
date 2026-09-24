@@ -4,7 +4,7 @@
 
 Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.8.0**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the selected-range or chunked IndexedDB APIs.
+Version **1.8.1**: **restart the SillyTavern server plugin after upgrading**. Refreshing the browser alone does not activate the selected-range or chunked IndexedDB APIs.
 
 ## Features
 

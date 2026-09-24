@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.8.1 - 2026-09-24
+
+### 繁體中文
+
+- 修正大型 IndexedDB 資料庫在檔案管理器因整份 JSON 字串超出瀏覽器限制而顯示 `Invalid string length`；容量改為逐項估算，超過 128 MiB 的傳輸會提早顯示容量錯誤。
+- 更新版本資訊。伺服器端出現 HTTP 404 時，仍須安裝／更新伺服器插件並重啟 SillyTavern。
+
+### 简体中文
+
+- 修复大型 IndexedDB 数据库在文件管理器中因整份 JSON 字符串超出浏览器限制而显示 `Invalid string length`；容量改为逐项估算，超过 128 MiB 的传输会提前显示容量错误。
+- 更新版本信息。服务器端出现 HTTP 404 时，仍需安装／更新服务器插件并重启 SillyTavern。
+
+### English
+
+- Fix `Invalid string length` in the IndexedDB file manager for large databases by estimating JSON size without constructing one combined string; transfers over 128 MiB are rejected early with a clear size error.
+- Update version metadata. HTTP 404 still requires installing/updating the server plugin and restarting SillyTavern.
+
 ## 1.8.0 - 2026-09-24
 
 ### 繁體中文

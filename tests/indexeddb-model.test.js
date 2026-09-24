@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeArchiveObjects, selectIndexedDbArchive } from '../lib/indexeddb-model.js';
+import { estimateJsonBytes, mergeArchiveObjects, selectIndexedDbArchive } from '../lib/indexeddb-model.js';
 
 function archive(databases, scope = { kind: 'all' }) {
     return { format: 'sillytavern-indexeddb-backup', version: 1, createdAt: '2026-09-24T00:00:00.000Z', scope, databases };
@@ -48,4 +48,14 @@ test('selected archive export filters records by full IndexedDB primary-key toke
     const input = archive([{ name: 'app', version: 1, stores: [store('items', [['a', 1], ['b', 2]])] }]);
     const selected = selectIndexedDbArchive(input, { kind: 'items', items: [{ database: 'app', store: 'items', keyToken: '"b"' }] });
     assert.deepEqual(selected.databases[0].stores[0].records, [{ key: 'b', value: 2 }]);
+});
+
+test('IndexedDB JSON size estimation matches UTF-8 serialization without building a combined archive string', () => {
+    const value = {
+        database: '角色🙂',
+        values: ['quote: "', 'slash: \\', 'control: \u0001\n', 'lone surrogate: \ud800', 123.5, null, true],
+        nested: { empty: [], object: {} },
+    };
+    assert.equal(estimateJsonBytes(value), new TextEncoder().encode(JSON.stringify(value)).byteLength);
+    assert.equal(estimateJsonBytes('🙂'), 6);
 });
