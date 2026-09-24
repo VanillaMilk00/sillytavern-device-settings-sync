@@ -566,8 +566,8 @@ async function confirmManualAction(title, message, okButton) {
 function manualActionTitle(action, includesIndexedDb = indexedDbConfig().enabled) {
     const key = `dss.${action}.${includesIndexedDb ? 'withIndexedDbTitle' : 'title'}`;
     const fallback = action === 'pull'
-        ? includesIndexedDb ? 'Download localStorage + selected IndexedDB' : 'Download localStorage'
-        : includesIndexedDb ? 'Upload localStorage + selected IndexedDB' : 'Upload localStorage';
+        ? includesIndexedDb ? 'Server → this device: localStorage + selected IndexedDB' : 'Server → this device: localStorage'
+        : includesIndexedDb ? 'This device → server: localStorage + selected IndexedDB' : 'This device → server: localStorage';
     return tr(key, fallback);
 }
 
@@ -589,7 +589,7 @@ async function confirmManualPull() {
             'dss.pull.confirmMessage',
             'This will overwrite syncable settings on this device with the server settings. Local changes that have not been uploaded may be lost, and the page will reload automatically when complete. A full localStorage snapshot, including caches and credentials, will first be saved to this account on the server. Continue?',
         )) + extra,
-        tr('dss.pull.confirmButton', 'Sync now'),
+        tr('dss.pull.confirmButton', 'Sync to this device'),
     );
 }
 
@@ -601,7 +601,7 @@ async function confirmManualPush() {
             'dss.push.confirmMessage',
             'This will replace the server sync data with settings from this device. Portable settings that exist on the server but were deleted locally will also be deleted. A full localStorage snapshot, including caches and credentials, will first be saved to this account on the server. Continue?',
         )) + extra,
-        tr('dss.push.confirmButton', 'Upload now'),
+        tr('dss.push.confirmButton', 'Sync to server'),
     );
 }
 
@@ -662,7 +662,7 @@ async function manualPullLocked({ reload = true } = {}) {
             if (indexedDbError) diagnostics.lastError = [diagnostics.lastError, errorText(indexedDbError)].filter(Boolean).join('\n');
             renderStatus();
             if (indexedDbError) globalThis.toastr?.warning(msg('pullPartialIndexedDb', { error: errorText(indexedDbError) }), tr('dss.panel.title', 'Device Settings Sync'));
-            else globalThis.toastr?.success(tr('dss.toast.pullSuccess', 'Server settings downloaded. Reloading to apply them completely.'), tr('dss.panel.title', 'Device Settings Sync'));
+            else globalThis.toastr?.success(tr('dss.toast.pullSuccess', 'Server settings synced to this device. Reloading to apply them completely.'), tr('dss.panel.title', 'Device Settings Sync'));
             setTimeout(() => location.reload(), 350);
         } else {
             setOperationState('manual-ready', false);
@@ -714,7 +714,7 @@ async function manualPushLocked() {
                 seeded: true, entries: Object.fromEntries([...snapshot.values].map(([key, value]) => [key, { value }])) })
                 .catch(error => automatic.fatal(error));
             setOperationState('manual-ready', false);
-            globalThis.toastr?.success(formatText('dss.toast.pushSuccess', 'Uploaded {count} portable settings.', { count: changes.length }));
+            globalThis.toastr?.success(formatText('dss.toast.pushSuccess', 'Synced {count} settings to the server.', { count: changes.length }));
             return { ...diagnostics };
         }
         const remote = await request('/state');
@@ -747,7 +747,7 @@ async function manualPushLocked() {
         await automatic?.remember(snapshot.values, state).catch(error => automatic.fatal(error));
         setOperationState('manual-ready', false);
         globalThis.toastr?.success(
-            formatText('dss.toast.pushSuccess', 'Uploaded {count} portable settings.', { count: mutations.length }),
+            formatText('dss.toast.pushSuccess', 'Synced {count} settings to the server.', { count: mutations.length }),
             tr('dss.panel.title', 'Device Settings Sync'),
         );
         return { ...diagnostics };
@@ -764,8 +764,8 @@ function renderStatus() {
     if (!target) return;
     const labels = {
         'manual-ready': diagnostics.mode === 'automatic' ? msg(automatic?.status || 'autoReady') : tr('dss.status.manualReady', 'Manual mode (ready)'),
-        downloading: tr('dss.status.downloading', 'Downloading from server'),
-        saving: tr('dss.status.saving', 'Saving and uploading'),
+        downloading: tr('dss.status.downloading', 'Syncing from server to this device'),
+        saving: tr('dss.status.saving', 'Saving and syncing to server'),
         reloading: tr('dss.status.reloading', 'Reloading to apply'),
         error: tr('dss.status.error', 'Error'),
         applying: msg('applying'),
@@ -902,9 +902,9 @@ function createPanel() {
             <div class="inline-drawer-content">
                 <div class="dss_manual_notice">
                     <b data-i18n="dss.panel.manualHeading">Manual mode</b><br>
-                    <span data-i18n="dss.panel.manualNotice">No settings are downloaded, uploaded, polled, or monitored when the page loads. The extension connects only when you use a sync button below.</span>
+                    <span data-i18n="dss.panel.manualNotice">No settings are synced, polled, or monitored when the page loads. The extension connects only when you use a sync button below.</span>
                 </div>
-                <small data-i18n="dss.panel.description">These buttons sync the selected localStorage range. Upload first saves SillyTavern account and extension settings; download reloads the page. Selected IndexedDB records are included only when enabled in Settings. localStorage may contain credentials; HttpOnly login cookies cannot be synchronized.</small>
+                <small data-i18n="dss.panel.description">The arrows show the sync direction for the selected localStorage range. This device → server first saves SillyTavern account and extension settings; server → this device reloads the page after syncing. Selected IndexedDB records are included only when enabled in Settings. localStorage may contain credentials; HttpOnly login cookies cannot be synchronized.</small>
                 <button id="dss_settings_toggle" class="menu_button" type="button" aria-expanded="false" aria-controls="dss_settings_menu" data-i18n="dss.manager.settingsTitle">Settings</button>
                 <div id="dss_settings_menu" hidden>
                     <div id="dss_auto"></div>
@@ -923,8 +923,8 @@ function createPanel() {
                     <textarea id="dss_excludes" rows="3" placeholder="example-cache:*" data-i18n="[placeholder]dss.panel.excludesPlaceholder"></textarea>
                 </div>
                 <div class="dss_actions">
-                    <button id="dss_pull" class="menu_button" data-i18n="dss.pull.title">Download localStorage</button>
-                    <button id="dss_push" class="menu_button" data-i18n="dss.push.title">Upload localStorage</button>
+                    <button id="dss_pull" class="menu_button" data-i18n="dss.pull.title">Server → this device: localStorage</button>
+                    <button id="dss_push" class="menu_button" data-i18n="dss.push.title">This device → server: localStorage</button>
                     <button id="dss_reload" class="menu_button" data-i18n="dss.panel.reloadButton">Reload to apply</button>
                     <button id="dss_copy" class="menu_button" data-i18n="dss.panel.copyButton">Copy diagnostics</button>
                     <button id="dss_manage" class="menu_button" data-i18n="dss.manager.manager">Manage localStorage</button>

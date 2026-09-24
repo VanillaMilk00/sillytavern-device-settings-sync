@@ -30,8 +30,8 @@ test('provides every referenced translation in both Chinese locales', () => {
 
 test('uses English as the built-in fallback language', () => {
     assert.match(source, />Device Settings Sync</u);
-    assert.match(source, />Download localStorage</u);
-    assert.match(source, />Upload localStorage</u);
+    assert.match(source, />Server → this device: localStorage</u);
+    assert.match(source, />This device → server: localStorage</u);
     assert.doesNotMatch(source, /[一-龥]/u);
 });
 
