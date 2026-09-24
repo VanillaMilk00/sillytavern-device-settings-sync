@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.8.2 - 2026-09-24
+
+### 繁體中文
+
+- IndexedDB 管理器改為先讀取資料庫／儲存區目錄，展開時才分頁載入紀錄；每頁最多 100 筆，避免每次開啟都讀取所有資料。
+- 改以清楚的「資料庫 → 物件儲存區 → 紀錄檔案」樹狀介面瀏覽。此版本只更新前端，既有伺服器插件無須重啟。
+
+### 简体中文
+
+- IndexedDB 管理器改为先读取数据库／存储区目录，展开后才分页加载记录；每页最多 100 条，避免每次打开都读取全部数据。
+- 改为清晰的“数据库 → 对象存储区 → 记录文件”树状界面。本版本仅更新前端，现有服务器插件无需重启。
+
+### English
+
+- Make the IndexedDB manager read only database/store metadata initially, then load records on expansion in pages of 100 instead of scanning every database on each open.
+- Show a clear database → object store → record-file tree. This release changes only the frontend; an already-current server plugin does not need a restart.
+
 ## 1.8.1 - 2026-09-24
 
 ### 繁體中文

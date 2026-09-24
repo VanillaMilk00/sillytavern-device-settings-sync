@@ -19,7 +19,11 @@ function download(archive, filename = 'indexedDB-backup.json') {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function recordCount(archive) { return archive.databases.reduce((sum, db) => sum + db.stores.reduce((part, store) => part + store.records.length, 0), 0); }
-function recordBytes(record) { return estimateJsonBytes(record); }
+const recordSizeCache = new WeakMap();
+function recordBytes(record) {
+    if (!recordSizeCache.has(record)) recordSizeCache.set(record, estimateJsonBytes(record));
+    return recordSizeCache.get(record);
+}
 function keyLabel(key) {
     if (key?.$type === 'date') return key.value || 'Invalid Date';
     if (key?.$type === 'array-buffer') return `ArrayBuffer (${atob(key.value).length} B)`;
@@ -61,7 +65,7 @@ async function chooseImportScope(archive, localArchive) {
         if (item.kind === 'database') return database.stores.map(store => ({ kind: 'store', database: database.name, store: store.name }));
         if (item.kind === 'store') {
             const store = database.stores.find(row => row.name === item.store);
-            return (store?.records || []).map(record => ({ kind: 'record', database: database.name, store: store.name, keyToken: JSON.stringify(record.key) }));
+            return (store?.records || []).map(record => ({ kind: 'record', database: database.name, store: store.name, keyToken: record.keyToken || JSON.stringify(record.key) }));
         }
         return [];
     };
@@ -190,27 +194,21 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
     status.classList.remove('dss_error');
     status.textContent = msg('indexedDbScanning');
     let archive;
-    try { archive = await api.snapshotIndexedDb({ kind: 'all' }, { allowOversize: true, tolerateUnsupported: true }); }
+    try { archive = await api.inspectIndexedDb(); }
     catch (error) { status.textContent = errorText(error); status.classList.add('dss_error'); return; }
+    status.textContent = '';
     if (!archive.databases.length) {
         status.textContent = msg('indexedDbNoDatabases');
         content.append(element('p', msg('indexedDbEnumerationHint'), 'dss_note'));
         return;
     }
-    const archiveSize = estimateJsonBytes(archive);
-    const recordSizes = new Map();
-    for (const database of archive.databases) for (const store of database.stores) for (const record of store.records) {
-        recordSizes.set(JSON.stringify([database.name, store.name, JSON.stringify(record.key)]), recordBytes(record));
-    }
-    const sizeOf = (database, store, record) => recordSizes.get(JSON.stringify([database, store, JSON.stringify(record.key)])) || 0;
-    const unsupportedValues = archive.databases.reduce((sum, database) => sum + database.stores.reduce((part, store) =>
-        part + store.records.filter(record => record.value?.$type === 'unsupported-display').length, 0), 0);
+    const sizeOf = (_database, _store, record) => recordBytes(record);
 
     const toolbar = element('div', undefined, 'dss_toolbar');
     const search = element('input', undefined, 'text_pole'); search.type = 'search'; search.placeholder = msg('indexedDbSearch');
     const selected = new Map();
+    const expandedDatabases = new Set(archive.databases.map(database => database.name));
     const expandedStores = new Set();
-    const recordLimits = new Map();
     const list = element('div', undefined, 'dss_idb_tree');
     const summary = element('p', undefined, 'dss_summary');
     const quota = element('p', undefined, 'dss_note');
@@ -246,13 +244,10 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
     }
     function selectionState(item) {
         if (nodeIsCovered(item)) return { checked: true, indeterminate: false };
-        const children = directChildren(item);
-        if (!children.length) return { checked: false, indeterminate: false };
-        const states = children.map(selectionState);
-        return {
-            checked: states.every(state => state.checked),
-            indeterminate: states.some(state => state.checked || state.indeterminate),
-        };
+        const hasSelectedDescendant = [...selected.values()].some(candidate => candidate.database === item.database
+            && (item.kind === 'database' ? candidate.kind !== 'database'
+                : item.kind === 'store' && candidate.kind === 'record' && candidate.store === item.store));
+        return { checked: false, indeterminate: hasSelectedDescendant };
     }
     function addSelection(item, enabled) {
         const id = token(item);
@@ -289,79 +284,120 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
                 for (const key of [...selected.keys()]) if (JSON.parse(key).database === item.database) selected.delete(key);
             } else {
                 selected.delete(token({ kind: 'database', database: item.database }));
-                if (item.kind === 'record') selected.delete(token({ kind: 'store', database: item.database, store: item.store }));
-                for (const key of [...selected.keys()]) {
-                    const existing = JSON.parse(key);
-                    if (existing.database === item.database && (item.kind === 'store' || existing.store === item.store)) selected.delete(key);
+                if (item.kind === 'store') {
+                    for (const key of [...selected.keys()]) {
+                        const existing = JSON.parse(key);
+                        if (existing.database === item.database && existing.store === item.store) selected.delete(key);
+                    }
+                } else {
+                    selected.delete(token({ kind: 'store', database: item.database, store: item.store }));
                 }
             }
             selected.set(id, item);
         }
         renderTree();
     }
+    async function loadStorePage(database, store) {
+        if (store.loading || (store.loaded && !store.hasMore)) return;
+        store.loading = true;
+        status.textContent = msg('indexedDbLoadingRecords');
+        status.classList.remove('dss_error');
+        renderTree();
+        try {
+            const page = await api.readIndexedDbStorePage({ databaseName: database.name, storeName: store.name,
+                afterKeyToken: store.records.at(-1)?.keyToken, limit: 100 });
+            store.records.push(...page.records);
+            store.total = page.total;
+            store.hasMore = page.hasMore;
+            store.loaded = true;
+        } catch (error) {
+            status.textContent = errorText(error);
+            status.classList.add('dss_error');
+        } finally {
+            store.loading = false;
+            if (status.textContent === msg('indexedDbLoadingRecords')) status.textContent = '';
+            renderTree();
+        }
+    }
     function renderTree() {
         list.replaceChildren();
-        let shownRecords = 0, allRecords = 0;
+        let shownRecords = 0, allRecords = 0, loadedBytes = 0;
         for (const database of archive.databases) {
             const dbItem = { kind: 'database', database: database.name };
             const dbDetails = element('details', undefined, 'dss_idb_database');
-            dbDetails.open = true;
+            dbDetails.open = expandedDatabases.has(database.name);
+            dbDetails.addEventListener('toggle', () => {
+                if (dbDetails.open) expandedDatabases.add(database.name);
+                else expandedDatabases.delete(database.name);
+            });
             const dbSummary = element('summary');
             const dbState = selectionState(dbItem);
             const dbCheck = element('input'); dbCheck.type = 'checkbox'; dbCheck.checked = dbState.checked; dbCheck.indeterminate = dbState.indeterminate;
             dbCheck.addEventListener('click', event => event.stopPropagation());
             dbCheck.addEventListener('change', () => addSelection(dbItem, dbCheck.checked));
             const databaseBytes = database.stores.reduce((sum, store) => sum + store.records.reduce((part, record) => part + sizeOf(database.name, store.name, record), 0), 0);
-            dbSummary.append(dbCheck, element('strong', database.name), element('small', ` · v${database.version} · ${database.stores.length} ${msg('indexedDbStores')} · ${bytes(databaseBytes)}`));
+            dbSummary.append(dbCheck, element('strong', database.name), element('small', ` · v${database.version} · ${database.stores.length} ${msg('indexedDbStores')} · ${msg('indexedDbLoadedSize', { size: bytes(databaseBytes) })}`));
             dbDetails.append(dbSummary);
             for (const store of database.stores) {
                 const storeItem = { kind: 'store', database: database.name, store: store.name };
                 const storeId = token(storeItem);
                 const storeDetails = element('details', undefined, 'dss_idb_store');
-                storeDetails.open = expandedStores.has(storeId) || Boolean(search.value);
+                storeDetails.open = expandedStores.has(storeId);
                 storeDetails.addEventListener('toggle', () => {
-                    if (search.value) return;
-                    if (storeDetails.open) expandedStores.add(storeId);
-                    else expandedStores.delete(storeId);
+                    if (storeDetails.open) {
+                        expandedStores.add(storeId);
+                        if (!store.loaded) loadStorePage(database, store);
+                    } else expandedStores.delete(storeId);
                 });
                 const storeSummary = element('summary');
                 const storeState = selectionState(storeItem);
                 const storeCheck = element('input'); storeCheck.type = 'checkbox'; storeCheck.checked = storeState.checked; storeCheck.indeterminate = storeState.indeterminate;
+                storeCheck.disabled = !selected.has(storeId) && selected.has(token({ kind: 'database', database: database.name }));
                 storeCheck.addEventListener('click', event => event.stopPropagation());
                 storeCheck.addEventListener('change', () => addSelection(storeItem, storeCheck.checked));
                 const storeBytes = store.records.reduce((sum, record) => sum + sizeOf(database.name, store.name, record), 0);
-                storeSummary.append(storeCheck, element('span', store.name), element('small', ` · ${store.records.length} ${msg('indexedDbRecords')} · ${bytes(storeBytes)}`));
+                const recordCountLabel = store.total === null
+                    ? msg('indexedDbExpandToLoad')
+                    : `${store.records.length}/${store.total} ${msg('indexedDbRecords')}`;
+                storeSummary.append(storeCheck, element('span', store.name), element('small', ` · ${recordCountLabel} · ${msg('indexedDbLoadedSize', { size: bytes(storeBytes) })}`));
                 storeDetails.append(storeSummary);
                 allRecords += store.records.length;
+                loadedBytes += storeBytes;
                 const matchingRecords = store.records.filter(record => {
                     if (!search.value) return true;
                     const labelText = `${keyLabel(record.key)} · ${bytes(sizeOf(database.name, store.name, record))}`;
                     return `${database.name} ${store.name} ${labelText}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase());
                 });
-                const limit = recordLimits.get(storeId) || 200;
-                const renderedRecords = storeDetails.open ? matchingRecords.slice(0, limit) : [];
+                const renderedRecords = storeDetails.open ? matchingRecords : [];
                 for (const record of renderedRecords) {
                     shownRecords += 1;
                     const labelText = `${keyLabel(record.key)} · ${bytes(sizeOf(database.name, store.name, record))}`;
-                    const item = { kind: 'record', database: database.name, store: store.name, keyToken: JSON.stringify(record.key) };
+                    const item = { kind: 'record', database: database.name, store: store.name, keyToken: record.keyToken || JSON.stringify(record.key) };
                     const row = element('label', undefined, 'dss_idb_record');
                     const check = element('input'); check.type = 'checkbox'; check.checked = nodeIsCovered(item);
+                    check.disabled = !selected.has(token(item)) && (selected.has(token({ kind: 'database', database: database.name }))
+                        || selected.has(token({ kind: 'store', database: database.name, store: store.name })));
                     check.addEventListener('change', () => addSelection(item, check.checked));
-                    row.append(check, element('span', labelText), element('small', msg('indexedDbFileType')));
+                    row.append(check, element('span', labelText), element('small', `${msg('indexedDbFileType')} · ${bytes(sizeOf(database.name, store.name, record))}`));
                     storeDetails.append(row);
                 }
-                if (storeDetails.open && matchingRecords.length > renderedRecords.length) {
-                    storeDetails.append(button(msg('indexedDbLoadMore', { count: matchingRecords.length - renderedRecords.length }), () => {
-                        recordLimits.set(storeId, limit + 200);
-                        renderTree();
-                    }));
+                if (storeDetails.open && store.loading) {
+                    storeDetails.append(element('small', msg('indexedDbLoadingRecords'), 'dss_note'));
+                } else if (storeDetails.open && store.hasMore) {
+                    storeDetails.append(button(msg('indexedDbLoadMoreFiles'), () => loadStorePage(database, store)));
+                } else if (storeDetails.open && store.loaded && !store.records.length) {
+                    storeDetails.append(element('small', msg('indexedDbNoRecords'), 'dss_note'));
                 }
                 dbDetails.append(storeDetails);
             }
             list.append(dbDetails);
         }
         summary.textContent = msg('indexedDbSummary', { databases: archive.databases.length, count: allRecords,
-            size: bytes(archiveSize), selected: selected.size, visible: shownRecords });
+            size: bytes(loadedBytes), selected: selected.size, visible: shownRecords });
+        const unsupportedValues = archive.databases.reduce((sum, database) => sum + database.stores.reduce((part, store) =>
+            part + store.records.filter(record => record.value?.$type === 'unsupported-display').length, 0), 0);
+        unsupportedHint.hidden = !unsupportedValues;
+        if (unsupportedValues) unsupportedHint.textContent = msg('indexedDbUnsupportedDisplay', { count: unsupportedValues });
     }
     search.addEventListener('input', renderTree);
     toolbar.append(search,
@@ -382,7 +418,8 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
                 const file = input.files?.[0]; if (!file) return;
                 if (file.size > MAX_INDEXEDDB_ARCHIVE_BYTES) throw { code: 'indexedDbArchiveTooLarge' };
                 const incoming = parseIndexedDbArchive(await file.text());
-                const selection = await chooseImportScope(incoming, archive);
+                const localArchive = await api.snapshotIndexedDb({ kind: 'all' }, { allowOversize: true, tolerateUnsupported: true });
+                const selection = await chooseImportScope(incoming, localArchive);
                 if (!selection) return;
                 const records = recordCount(selection.archive);
                 await api.importIndexedDb(selection.archive, 'import', selection.expectedHash);
@@ -393,16 +430,12 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
         button(msg('remove'), () => guard(async () => {
             if (!selected.size) throw { code: 'indexedDbScopeEmpty' };
             const scope = { kind: 'items', items: scopeItems(selected) };
-            const exact = []; let selectedBytes = 0;
-            for (const db of archive.databases) for (const store of db.stores) for (const record of store.records) {
-                const tokenRecord = { database: db.name, store: store.name, keyToken: JSON.stringify(record.key) };
-                const matches = scope.items.some(item => item.database === db.name && (item.store === undefined || item.store === store.name)
-                    && (item.keyToken === undefined || item.keyToken === tokenRecord.keyToken));
-                if (matches) {
-                    exact.push({ database: db.name, store: store.name, keyToken: tokenRecord.keyToken });
-                    selectedBytes += recordBytes(record);
-                }
-            }
+            const current = await api.snapshotIndexedDb(scope, { allowOversize: true, tolerateUnsupported: true });
+            const exact = current.databases.flatMap(db => db.stores.flatMap(store => store.records.map(record => ({
+                database: db.name, store: store.name, keyToken: JSON.stringify(record.key),
+            }))));
+            const selectedBytes = current.databases.reduce((sum, db) => sum + db.stores.reduce((dbSum, store) =>
+                dbSum + store.records.reduce((storeSum, record) => storeSum + recordBytes(record), 0), 0), 0);
             if (!exact.length) return;
             const answer = await new Popup(msg('indexedDbRemoveConfirm', { count: exact.length, size: bytes(selectedBytes) }), POPUP_TYPE.CONFIRM, '', {
                 okButton: msg('remove'), cancelButton: msg('cancel'), allowVerticalScrolling: true,
@@ -417,9 +450,10 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
             await api.setIndexedDbScope({ kind: 'items', items: scopeItems(selected) });
             status.textContent = msg('indexedDbScopeSaved', { count: selected.size });
         })));
-    content.append(element('p', msg('indexedDbHelp'), 'dss_note'));
-    if (unsupportedValues) content.append(element('p', msg('indexedDbUnsupportedDisplay', { count: unsupportedValues }), 'dss_note'));
-    content.append(quota, toolbar, actions, summary, list);
+    const unsupportedHint = element('p', undefined, 'dss_note');
+    unsupportedHint.hidden = true;
+    content.append(element('p', msg('indexedDbHelp'), 'dss_note'), element('p', msg('indexedDbLazyHint'), 'dss_note'),
+        quota, toolbar, actions, summary, element('div', 'IndexedDB /', 'dss_idb_root'), list, unsupportedHint);
     renderTree();
 }
 

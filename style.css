@@ -108,13 +108,18 @@
 .dss_type { min-width: 105px; overflow-wrap: anywhere; }
 .dss_tree td:last-child { min-width: 120px; }
 .dss_manager button:disabled { opacity: .5; cursor: not-allowed; }
+.dss_idb_root { font-weight: 700; padding: 6px 8px; border-bottom: 1px solid var(--SmartThemeBorderColor, #888); }
 .dss_idb_tree { max-height: min(62vh, 900px); overflow: auto; border: 1px solid var(--SmartThemeBorderColor, #888); border-radius: 6px; padding: 8px; }
 .dss_idb_database, .dss_idb_store { margin: 4px 0; }
 .dss_idb_database > summary, .dss_idb_store > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 34px; }
+.dss_idb_database { border-inline-start: 2px solid color-mix(in srgb, var(--SmartThemeBorderColor, #888) 65%, transparent); padding-inline-start: 6px; }
 .dss_idb_database > summary { font-size: 1.02em; }
-.dss_idb_store { margin-inline-start: 18px; }
-.dss_idb_record { display: flex; align-items: center; gap: 9px; min-height: 30px; margin-inline-start: 42px; border-bottom: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #888) 35%, transparent); }
+.dss_idb_database > summary strong::before { content: '▣'; margin-inline-end: 7px; opacity: .8; }
+.dss_idb_store { margin-inline-start: 20px; padding-inline-start: 12px; border-inline-start: 1px dotted var(--SmartThemeBorderColor, #888); }
+.dss_idb_store > summary span::before { content: '▱'; margin-inline-end: 7px; opacity: .8; }
+.dss_idb_record { display: flex; align-items: center; gap: 9px; min-height: 30px; margin-inline-start: 28px; padding-inline-start: 12px; border-inline-start: 1px dotted var(--SmartThemeBorderColor, #888); border-bottom: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #888) 35%, transparent); }
 .dss_idb_record span { overflow-wrap: anywhere; flex: 1; }
+.dss_idb_record span::before { content: '▪'; margin-inline-end: 8px; opacity: .7; }
 .dss_idb_record small, .dss_idb_tree summary small { opacity: .72; }
 .dss_idb_record input, .dss_idb_tree summary input { width: 16px; min-width: 16px; margin: 0; }
 #device_settings_sync_panel #dss_settings_menu select { width: 100%; }

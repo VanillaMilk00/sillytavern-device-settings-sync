@@ -9,7 +9,7 @@ import { msg, errorText, bytes } from './lib/messages.js';
 import { openStorageManager } from './ui/storage-manager.js';
 import { probeCapacity } from './lib/capacity-probe.js';
 import { AutoSync } from './lib/auto-sync.js';
-import { IndexedDbError, snapshotIndexedDB, serializeIndexedDbArchive, mergeIndexedDbArchive, mergeArchiveObjects, deleteIndexedDbItems, selectIndexedDbArchive } from './lib/indexeddb-model.js';
+import { IndexedDbError, snapshotIndexedDB, inspectIndexedDB, readIndexedDbStorePage, serializeIndexedDbArchive, mergeIndexedDbArchive, mergeArchiveObjects, deleteIndexedDbItems, selectIndexedDbArchive } from './lib/indexeddb-model.js';
 import { uploadIndexedDbArchive, downloadIndexedDbArchive, digestHex } from './lib/indexeddb-transfer.js';
 import { AUTO_PREFIX, planRemote, sortedEntries } from './lib/auto-core.js';
 import {
@@ -19,7 +19,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.8.1';
+const VERSION = '1.8.2';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -553,6 +553,8 @@ async function showManager(initialTab = 'local') {
                 refreshSnapshot();
             },
             snapshotIndexedDb: (scope, options) => snapshotIndexedDB({ scope, ...options }),
+            inspectIndexedDb: () => inspectIndexedDB(),
+            readIndexedDbStorePage: options => readIndexedDbStorePage(options),
             indexedDbScope,
             setIndexedDbScope: scope => {
                 if (scope?.kind !== 'items' || !Array.isArray(scope.items) || !scope.items.length) throw new IndexedDbError('indexedDbScopeEmpty');
