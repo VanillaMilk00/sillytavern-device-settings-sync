@@ -566,8 +566,8 @@ async function confirmManualAction(title, message, okButton) {
 function manualActionTitle(action, includesIndexedDb = indexedDbConfig().enabled) {
     const key = `dss.${action}.${includesIndexedDb ? 'withIndexedDbTitle' : 'title'}`;
     const fallback = action === 'pull'
-        ? includesIndexedDb ? 'Server → this device: localStorage + selected IndexedDB' : 'Server → this device: localStorage'
-        : includesIndexedDb ? 'This device → server: localStorage + selected IndexedDB' : 'This device → server: localStorage';
+        ? includesIndexedDb ? 'Sync from server (localStorage + selected IndexedDB)' : 'Sync from server (localStorage)'
+        : includesIndexedDb ? 'Upload local settings (localStorage + selected IndexedDB)' : 'Upload local settings (localStorage)';
     return tr(key, fallback);
 }
 
@@ -904,7 +904,7 @@ function createPanel() {
                     <b data-i18n="dss.panel.manualHeading">Manual mode</b><br>
                     <span data-i18n="dss.panel.manualNotice">No settings are synced, polled, or monitored when the page loads. The extension connects only when you use a sync button below.</span>
                 </div>
-                <small data-i18n="dss.panel.description">The arrows show the sync direction for the selected localStorage range. This device → server first saves SillyTavern account and extension settings; server → this device reloads the page after syncing. Selected IndexedDB records are included only when enabled in Settings. localStorage may contain credentials; HttpOnly login cookies cannot be synchronized.</small>
+                <small data-i18n="dss.panel.description">Upload local settings first saves SillyTavern account and extension settings; Sync from server reloads the page after syncing. Both actions include the selected localStorage range. Selected IndexedDB records are included only when enabled in Settings. localStorage may contain credentials; HttpOnly login cookies cannot be synchronized.</small>
                 <button id="dss_settings_toggle" class="menu_button" type="button" aria-expanded="false" aria-controls="dss_settings_menu" data-i18n="dss.manager.settingsTitle">Settings</button>
                 <div id="dss_settings_menu" hidden>
                     <div id="dss_auto"></div>
@@ -923,8 +923,8 @@ function createPanel() {
                     <textarea id="dss_excludes" rows="3" placeholder="example-cache:*" data-i18n="[placeholder]dss.panel.excludesPlaceholder"></textarea>
                 </div>
                 <div class="dss_actions">
-                    <button id="dss_pull" class="menu_button" data-i18n="dss.pull.title">Server → this device: localStorage</button>
-                    <button id="dss_push" class="menu_button" data-i18n="dss.push.title">This device → server: localStorage</button>
+                    <button id="dss_pull" class="menu_button" data-i18n="dss.pull.title">Sync from server (localStorage)</button>
+                    <button id="dss_push" class="menu_button" data-i18n="dss.push.title">Upload local settings (localStorage)</button>
                     <button id="dss_reload" class="menu_button" data-i18n="dss.panel.reloadButton">Reload to apply</button>
                     <button id="dss_copy" class="menu_button" data-i18n="dss.panel.copyButton">Copy diagnostics</button>
                     <button id="dss_manage" class="menu_button" data-i18n="dss.manager.manager">Manage localStorage</button>

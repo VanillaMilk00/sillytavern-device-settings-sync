@@ -10,8 +10,8 @@
 
 - 預設純手動模式：兩個自動開關皆關閉時，載入頁面不下載、不上傳、不輪詢。
 - 自動上傳、自動下載分別開啟；15 分鐘模型請求閒置上傳，以及進入頁面時的下載檢查互不綁定。
-- 「本機 → 伺服器：localStorage」把目前裝置視為來源，保存 SillyTavern 帳戶／擴充設定及選定範圍的 `localStorage`。
-- 「伺服器 → 本機：localStorage」取得伺服器上對應範圍的資料，然後重新載入頁面以完整套用。
+- 「上傳本機設定（localStorage）」把目前裝置視為來源，保存 SillyTavern 帳戶／擴充設定及選定範圍的 `localStorage`。
+- 「從伺服器同步（localStorage）」取得伺服器上對應範圍的資料，然後重新載入頁面以完整套用。
 - 執行上傳或下載前會顯示確認視窗，避免誤觸造成設定被覆蓋。
 - 每個 SillyTavern 登入帳戶使用獨立同步檔。
 - 排除聊天快取、生成歷史、圖片／Blob、除錯資料及過大的值。
@@ -187,8 +187,8 @@ docker exec sillytavern node /home/node/app/public/scripts/extensions/third-part
 
 ## 使用
 
-1. 在第一台裝置登入 SillyTavern，調整好設定後按「本機 → 伺服器：localStorage」。
-2. 在其他裝置登入同一帳戶，按「伺服器 → 本機：localStorage」。
+1. 在第一台裝置登入 SillyTavern，調整好設定後按「上傳本機設定（localStorage）」。
+2. 在其他裝置登入同一帳戶，按「從伺服器同步（localStorage）」。
 3. 頁面會重新載入一次，完成套用。
 
 上傳是完整的手動來源切換：遠端存在、但來源裝置已刪除的可攜式設定也會被刪除。請先確認目前裝置的設定正確，再按上傳。

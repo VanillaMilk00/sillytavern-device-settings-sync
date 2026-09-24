@@ -128,7 +128,7 @@ See the [official Android guide](https://docs.sillytavern.app/installation/andro
 
 ## Sync and five backup slots
 
-Use **This device → server: localStorage** on the source device, then **Server → this device: localStorage** on another device using the same account. Syncing to the device automatically reloads the page. Syncing to the server mirrors removals of portable keys from the source device.
+Use **Upload local settings (localStorage)** on the source device, then **Sync from server (localStorage)** on another device using the same account. Syncing to the device automatically reloads the page. Syncing to the server mirrors removals of portable keys from the source device.
 
 Both actions create a full snapshot of the **current device's localStorage before changes**, after confirmation. Cancel creates nothing; backup failure aborts sync; a later sync failure keeps the rescue backup. The sixth successful backup evicts the oldest, using atomic publication and per-account serialization. A transport retry uses the same operation ID and does not consume another slot, even after eviction. The index retains operation IDs, backup IDs and digest receipts without setting values for deduplication across eviction and server restarts; only five snapshot contents are retained.
 
