@@ -482,7 +482,6 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
     search.addEventListener('input', renderTree);
     toolbar.append(search,
         (scanAllButton = button(msg('indexedDbScanAll'), () => guard(scanAllSizes))),
-        button(msg('indexedDbSelectAll'), () => { selected.clear(); archive.databases.forEach(db => selected.set(token({ kind: 'database', database: db.name }), { kind: 'database', database: db.name })); renderTree(); }),
         button(msg('clearSelection'), () => { selected.clear(); renderTree(); }),
         button(msg('rescan'), () => guard(async () => { await refresh('indexeddb'); })));
     const actions = element('div', undefined, 'dss_toolbar');

@@ -19,7 +19,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.8.3';
+const VERSION = '1.9.0';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -138,10 +138,15 @@ function selectedScopeKeyExists() {
 
 function indexedDbConfigKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-config'; }
 function indexedDbScopeKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-scope'; }
+function indexedDbBaselineKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-baseline'; }
+function hasLegacyAllIndexedDbScope() {
+    try { return JSON.parse(localStorage.getItem(indexedDbConfigKey()) || 'null')?.scopeMode === 'all'; }
+    catch { return false; }
+}
 function indexedDbConfig() {
     try {
         const value = JSON.parse(localStorage.getItem(indexedDbConfigKey()) || 'null');
-        return { enabled: value?.enabled === true, scopeMode: value?.scopeMode === 'all' ? 'all' : 'selected' };
+        return { enabled: value?.enabled === true && value?.scopeMode !== 'all', scopeMode: 'selected' };
     } catch { return { enabled: false, scopeMode: 'selected' }; }
 }
 function selectedIndexedDbScope() {
@@ -150,24 +155,19 @@ function selectedIndexedDbScope() {
         if (scope?.kind === 'databases' && Array.isArray(scope.names)) return { kind: 'databases', names: [...new Set(scope.names.filter(name => typeof name === 'string'))] };
         if (scope?.kind === 'items' && Array.isArray(scope.items)) return { kind: 'items', items: scope.items.filter(item => item
             && typeof item.database === 'string' && (item.store === undefined || typeof item.store === 'string')
-            && (item.keyToken === undefined || typeof item.keyToken === 'string')) };
+            && (item.keyToken === undefined || (typeof item.store === 'string' && typeof item.keyToken === 'string'))) };
     } catch { /* Invalid selection stays empty instead of expanding to all databases. */ }
     return { kind: 'items', items: [] };
 }
 function indexedDbScope() {
-    return indexedDbConfig().scopeMode === 'all' ? { kind: 'all' } : selectedIndexedDbScope();
+    return selectedIndexedDbScope();
 }
 function indexedDbScopeConfigured(scope = indexedDbScope()) {
-    return scope.kind === 'all' || (scope.kind === 'databases' && scope.names.length > 0)
+    return (scope.kind === 'databases' && scope.names.length > 0)
         || (scope.kind === 'items' && scope.items.length > 0);
 }
-function indexedDbBaselineKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-baseline'; }
 function indexedDbCommitIntentKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-commit-intent'; }
 function indexedDbBackupIntentKey() { return AUTO_PREFIX + encodeURIComponent(getCurrentUserHandle() || '') + ':indexeddb-backup-intent'; }
-function readIndexedDbBaseline() {
-    try { return JSON.parse(localStorage.getItem(indexedDbBaselineKey()) || 'null'); } catch { return null; }
-}
-function writeIndexedDbBaseline(value) { localStorage.setItem(indexedDbBaselineKey(), JSON.stringify(value)); }
 function indexedDbArchiveCount(archive) {
     return archive.databases.reduce((sum, db) => sum + db.stores.reduce((storeSum, store) => storeSum + store.records.length, 0), 0);
 }
@@ -210,8 +210,15 @@ async function backupIndexedDbArchive(archive, reason) {
     localStorage.removeItem(indexedDbBackupIntentKey());
     return result;
 }
-async function fetchIndexedDbState() {
-    return downloadIndexedDbArchive(request, { metadataPath: '/indexeddb/state', chunkPath: index => `/indexeddb/state/chunks/${index}` });
+async function fetchIndexedDbState(scope) {
+    const metadata = await request('/indexeddb/state/scoped', { method: 'POST', body: JSON.stringify({ scope }) });
+    const transferPath = `/indexeddb/state/scoped/${encodeURIComponent(metadata.id)}`;
+    try {
+        return await downloadIndexedDbArchive(request, { metadata,
+            chunkPath: index => `${transferPath}/chunks/${index}` });
+    } finally {
+        await request(transferPath, { method: 'DELETE' }).catch(() => {});
+    }
 }
 
 function indexedDbScopeContains(scope, database, store, keyToken) {
@@ -238,56 +245,22 @@ async function rollbackIndexedDbSnapshot(before, scope) {
     if (schema(before) !== schema(restored)) throw new IndexedDbError('indexedDbRollbackFailed', { reason: 'schema-cannot-be-removed' });
 }
 
-async function syncIndexedDb(direction, { automaticRun = false, force = false, scopeOverride, onApplied, onBeforeApply } = {}) {
-    if (!indexedDbConfig().enabled && !force) return { skipped: 'disabled' };
+async function syncIndexedDb(direction) {
+    if (!indexedDbConfig().enabled) return { skipped: 'disabled' };
     if (!['upload', 'download'].includes(direction)) throw new IndexedDbError('indexedDbInvalidTransfer');
-    const scope = scopeOverride || indexedDbScope();
+    const scope = indexedDbScope();
     if (!indexedDbScopeConfigured(scope)) throw new IndexedDbError('indexedDbScopeEmpty');
     const health = await request('/health');
-    if (!health.capabilities?.includes('indexeddb-sync-v1') || !health.capabilities?.includes('indexeddb-chunks-v1')) throw new IndexedDbError('indexedDbBackendMissing');
-    const before = await snapshotIndexedDB({ scope: { kind: 'all' } });
+    if (!health.capabilities?.includes('indexeddb-sync-v1') || !health.capabilities?.includes('indexeddb-chunks-v1')
+        || !health.capabilities?.includes('indexeddb-scoped-download-v1')) throw new IndexedDbError('indexedDbBackendMissing');
+    const before = await snapshotIndexedDB({ scope });
     const local = selectIndexedDbArchive(before, scope);
-    const remoteTransfer = await fetchIndexedDbState();
+    const remoteTransfer = await fetchIndexedDbState(scope);
     const remote = selectIndexedDbArchive(remoteTransfer.archive, scope);
     const archiveHash = await indexedDbArchiveHash(local);
     const localHash = await indexedDbSyncHash(local);
     const remoteHash = await indexedDbSyncHash(remote);
-    let baseline = readIndexedDbBaseline();
-    if (baseline?.scope !== JSON.stringify(scope)) baseline = null;
-    if (localHash === remoteHash) {
-        writeIndexedDbBaseline({ scope: JSON.stringify(scope), localHash, remoteHash, revision: remoteTransfer.metadata.revision, updatedAt: new Date().toISOString() });
-        return { skipped: 'equal' };
-    }
-    const localChanged = baseline ? baseline.localHash !== localHash : indexedDbArchiveCount(local) > 0;
-    const remoteChanged = baseline ? baseline.remoteHash !== remoteHash : indexedDbArchiveCount(remote) > 0;
-
-    if (automaticRun && baseline && localChanged && remoteChanged && localHash !== remoteHash) {
-        const choice = await resolveAutoConflict({ local: indexedDbArchiveCount(local), remote: indexedDbArchiveCount(remote), changes: Math.max(indexedDbArchiveCount(local), indexedDbArchiveCount(remote)), indexeddb: true });
-        if (choice === 'later') throw new IndexedDbError('indexedDbConflict');
-        direction = choice;
-    } else if (automaticRun && !baseline && localChanged && remoteChanged && localHash !== remoteHash) {
-        const choice = await resolveAutoConflict({ local: indexedDbArchiveCount(local), remote: indexedDbArchiveCount(remote), changes: Math.max(indexedDbArchiveCount(local), indexedDbArchiveCount(remote)), indexeddb: true });
-        if (choice === 'later') throw new IndexedDbError('indexedDbConflict');
-        direction = choice;
-    } else if (automaticRun && direction === 'upload' && baseline && remoteChanged && localHash !== remoteHash) {
-        const choice = await resolveAutoConflict({ local: indexedDbArchiveCount(local), remote: indexedDbArchiveCount(remote), changes: Math.max(indexedDbArchiveCount(local), indexedDbArchiveCount(remote)), indexeddb: true });
-        if (choice === 'later') throw new IndexedDbError('indexedDbConflict');
-        direction = choice;
-    } else if (automaticRun && direction === 'download' && baseline && localChanged && remoteChanged && localHash !== remoteHash) {
-        const choice = await resolveAutoConflict({ local: indexedDbArchiveCount(local), remote: indexedDbArchiveCount(remote), changes: Math.max(indexedDbArchiveCount(local), indexedDbArchiveCount(remote)), indexeddb: true });
-        if (choice === 'later') throw new IndexedDbError('indexedDbConflict');
-        direction = choice;
-    }
-
-    if (automaticRun && direction === 'download' && baseline && localChanged && !remoteChanged) {
-        // Keep the old baseline so a later automatic-upload choice still sees this local-only change.
-        return { skipped: 'local-only-change' };
-    }
-    if (automaticRun && direction === 'upload' && !localChanged) return { skipped: 'unchanged' };
-    if (automaticRun && direction === 'download' && !remoteChanged) return { skipped: 'unchanged' };
-    if (automaticRun && !baseline && direction === 'upload' && indexedDbArchiveCount(local) === 0) return { skipped: 'empty' };
-    if (automaticRun && !baseline && direction === 'download' && indexedDbArchiveCount(remote) === 0) return { skipped: 'empty' };
-
+    if (localHash === remoteHash) return { skipped: 'equal' };
     // Preflight the post-merge archive before writing a rescue backup or
     // mutating either side. Downloads retain local-only rows, so checking only
     // the transferred server archive would miss a locally oversized result.
@@ -296,12 +269,11 @@ async function syncIndexedDb(direction, { automaticRun = false, force = false, s
         : mergeArchiveObjects(before, remoteTransfer.archive, scope);
     serializeIndexedDbArchive(mergedPreview);
 
-    await onBeforeApply?.(direction);
     await backupIndexedDbArchive(before, direction);
     let committedRevision = remoteTransfer.metadata.revision;
     if (direction === 'upload') {
         const current = await request('/indexeddb/state');
-        if (current.revision !== remoteTransfer.metadata.revision || current.digest !== remoteTransfer.metadata.digest) throw new IndexedDbError('indexedDbRevisionConflict');
+        if (current.revision !== remoteTransfer.metadata.revision || current.digest !== remoteTransfer.metadata.stateDigest) throw new IndexedDbError('indexedDbRevisionConflict');
         let intent;
         try { intent = JSON.parse(localStorage.getItem(indexedDbCommitIntentKey()) || 'null'); } catch { intent = null; }
         if (!intent || intent.archiveHash !== archiveHash || intent.scope !== JSON.stringify(scope)) {
@@ -311,12 +283,12 @@ async function syncIndexedDb(direction, { automaticRun = false, force = false, s
         let receipt;
         try {
             receipt = await uploadIndexedDbArchive(request, local, { kind: 'commit', reason: 'upload', operationId: intent.operationId,
-                expectedRevision: intent.expectedRevision, source: archiveSource(), beforeFinish: () => onBeforeApply?.(direction) });
+                expectedRevision: intent.expectedRevision, source: archiveSource() });
         } catch (error) {
             if (error instanceof TypeError) {
                 try {
                     receipt = await uploadIndexedDbArchive(request, local, { kind: 'commit', reason: 'upload', operationId: intent.operationId,
-                        expectedRevision: intent.expectedRevision, source: archiveSource(), beforeFinish: () => onBeforeApply?.(direction) });
+                        expectedRevision: intent.expectedRevision, source: archiveSource() });
                 } catch (retryError) {
                     if (retryError.code === 'indexedDbRevisionConflict') localStorage.removeItem(indexedDbCommitIntentKey());
                     throw retryError;
@@ -335,8 +307,7 @@ async function syncIndexedDb(direction, { automaticRun = false, force = false, s
         localStorage.removeItem(indexedDbCommitIntentKey());
     } else {
         const latest = await request('/indexeddb/state');
-        if (latest.revision !== remoteTransfer.metadata.revision || latest.digest !== remoteTransfer.metadata.digest) throw new IndexedDbError('indexedDbRevisionConflict');
-        await onBeforeApply?.(direction);
+        if (latest.revision !== remoteTransfer.metadata.revision || latest.digest !== remoteTransfer.metadata.stateDigest) throw new IndexedDbError('indexedDbRevisionConflict');
         try { await mergeIndexedDbArchive(remoteTransfer.archive, { scope }); }
         catch (error) {
             try { await rollbackIndexedDbSnapshot(before, scope); }
@@ -351,11 +322,6 @@ async function syncIndexedDb(direction, { automaticRun = false, force = false, s
     const after = direction === 'upload' ? local : await snapshotIndexedDB({ scope });
     const afterHash = direction === 'upload' ? localHash : await indexedDbSyncHash(after);
     const changed = direction === 'download' && afterHash !== localHash;
-    if (changed) onApplied?.(remoteTransfer.metadata.revision);
-    const remoteAfter = direction === 'upload' ? mergedPreview : remoteTransfer.archive;
-    writeIndexedDbBaseline({ scope: JSON.stringify(scope), localHash: afterHash,
-        remoteHash: await indexedDbSyncHash(selectIndexedDbArchive(remoteAfter, scope)), revision: committedRevision,
-        updatedAt: new Date().toISOString() });
     const status = document.querySelector('#dss_indexeddb_status');
     if (status) status.textContent = msg(direction === 'upload' ? 'indexedDbUploadSuccess' : 'indexedDbDownloadSuccess', { count: indexedDbArchiveCount(after) });
     return { direction, records: indexedDbArchiveCount(after), revision: committedRevision,
@@ -406,7 +372,7 @@ async function request(path, options = {}) {
         if (response.status === 404) {
             throw Object.assign(new Error(tr(
                 'dss.error.backendMissing',
-                'The settings sync server plugin was not found (HTTP 404). If you installed the Docker extension for yourself, use the auto-detect installation command in the README, then restart the container.',
+                'The settings sync server plugin was not found (HTTP 404). Verify the server plugin installation in the README, then restart SillyTavern.',
             )), { status: response.status });
         }
         throw Object.assign(new Error(body?.error || `Settings sync HTTP ${response.status}`), { status: response.status });
@@ -479,12 +445,10 @@ function setOperationState(status, inFlight) {
 }
 
 function saveIndexedDbConfig(patch) {
-    const value = { ...indexedDbConfig(), ...patch };
+    const value = { ...indexedDbConfig(), ...patch, scopeMode: 'selected' };
     localStorage.setItem(indexedDbConfigKey(), JSON.stringify(value));
     const enabled = document.querySelector('#dss_indexeddb_enabled');
-    const mode = document.querySelector('#dss_indexeddb_scope_mode');
     if (enabled) enabled.checked = value.enabled;
-    if (mode) mode.value = value.scopeMode;
 }
 
 function archiveSource() {
@@ -819,9 +783,14 @@ function bindPanel() {
     if (!excludes) return;
     const settings = getSettings();
     excludes.value = settings.additionalExcludes;
+    if (hasLegacyAllIndexedDbScope()) {
+        localStorage.removeItem(indexedDbScopeKey());
+        localStorage.removeItem(indexedDbBaselineKey());
+        saveIndexedDbConfig({ enabled: false });
+        globalThis.toastr?.warning(msg('indexedDbLegacyAllDisabled'), tr('dss.panel.title', 'Device Settings Sync'));
+    }
     const initialIdbConfig = indexedDbConfig();
     document.querySelector('#dss_indexeddb_enabled').checked = initialIdbConfig.enabled;
-    document.querySelector('#dss_indexeddb_scope_mode').value = initialIdbConfig.scopeMode;
     const menu = document.querySelector('#dss_settings_menu');
     const toggle = document.querySelector('#dss_settings_toggle');
     toggle?.addEventListener('click', () => {
@@ -861,7 +830,8 @@ function bindPanel() {
             if (enabled && !(await confirmManualAction(msg('indexedDbTitle'), msg('indexedDbConsent'), msg('indexedDbTitle')))) return;
             if (enabled) {
                 const health = await request('/health');
-                if (!health.capabilities?.includes('indexeddb-sync-v1') || !health.capabilities?.includes('indexeddb-chunks-v1')) {
+                if (!health.capabilities?.includes('indexeddb-sync-v1') || !health.capabilities?.includes('indexeddb-chunks-v1')
+                    || !health.capabilities?.includes('indexeddb-scoped-download-v1')) {
                     throw new IndexedDbError('indexedDbBackendMissing');
                 }
                 if (!indexedDbScopeConfigured()) {
@@ -872,17 +842,6 @@ function bindPanel() {
             saveIndexedDbConfig({ enabled });
         } catch (error) { globalThis.toastr?.error(errorText(error)); }
         finally { idbEnabled.disabled = false; idbEnabled.checked = indexedDbConfig().enabled; }
-    });
-    const idbScopeMode = document.querySelector('#dss_indexeddb_scope_mode');
-    idbScopeMode.addEventListener('change', () => {
-        const scopeMode = idbScopeMode.value === 'all' ? 'all' : 'selected';
-        if (scopeMode === 'selected' && !indexedDbScopeConfigured(selectedIndexedDbScope())) {
-            saveIndexedDbConfig({ scopeMode, enabled: false });
-            globalThis.toastr?.warning(msg('indexedDbScopeEmpty'));
-            showManager('indexeddb').catch(error => globalThis.toastr?.error(errorText(error)));
-            return;
-        }
-        saveIndexedDbConfig({ scopeMode });
     });
 
     excludes.addEventListener('change', () => {
@@ -939,11 +898,7 @@ function createPanel() {
                     </select>
                     <small data-i18n="dss.manager.fullStorageHint">Includes cache, history and large values; sync-internal keys stay on this device. Separate server data, 32 MiB limit.</small>
                     <label class="dss_check"><input id="dss_indexeddb_enabled" type="checkbox"><span data-i18n="dss.manager.indexedDbEnable">Enable IndexedDB synchronization</span></label>
-                    <label for="dss_indexeddb_scope_mode" data-i18n="dss.manager.indexedDbScopeMode">IndexedDB scope</label>
-                    <select id="dss_indexeddb_scope_mode" class="text_pole">
-                        <option value="selected" data-i18n="dss.manager.indexedDbSelected">Selected databases/items</option>
-                        <option value="all" data-i18n="dss.manager.indexedDbAll">All same-origin databases</option>
-                    </select>
+                    <small data-i18n="dss.manager.indexedDbManualOnly">Manual sync includes only databases, stores or records selected in Manage IndexedDB. Automatic localStorage sync never reads or uploads IndexedDB.</small>
                     <small data-i18n="dss.manager.indexedDbHint">Merge-only; local-only records are preserved. 128 MiB per archive using 1 MiB chunks.</small>
                     <label class="dss_check"><input id="dss_before_changes" type="checkbox"><span data-i18n="dss.manager.beforeChanges">Also back up before import, restore or removal</span></label>
                     <label for="dss_excludes" data-i18n="dss.panel.excludesLabel">Additional localStorage keys to exclude (one per line; * wildcards supported)</label>
@@ -1037,7 +992,6 @@ async function initializeAutomatic() {
             request: syncRequest, options: filterOptions, persistDevice: () => getDeviceId(),
             busy: () => operationInFlight || managerOpen || settingsOpen,
             makeBackup, backup: sendBackup, conflict: resolveAutoConflict,
-            syncIndexedDb: (direction, options) => syncIndexedDb(direction, options),
             events: { eventSource, eventTypes: event_types },
             render: renderAuto, changed: refreshSnapshot,
             failure: error => globalThis.toastr?.error(errorText(error)),

@@ -4,7 +4,7 @@
 
 讓同一個 SillyTavern 帳戶在手機、桌面及其他裝置之間，手動同步設定，並可選擇自動同步可攜式瀏覽器設定。
 
-目前版本：**1.8.3**。IndexedDB 管理器快速開啟，未掃描的資料容量會明確標示；可按需估算全部資料庫的 JSON 容量。本次僅更新前端，重新整理瀏覽器即可；首次安裝或更新伺服器插件時，仍需依下方說明重啟 SillyTavern。
+目前版本：**1.9.0**。IndexedDB 只納入手動同步中明確選取的項目，不會隨 localStorage 自動同步。要使用新版「只傳輸所選範圍」，請更新伺服器插件至 1.9.0 並重啟 SillyTavern；前端更新後重新整理瀏覽器即可。
 
 ## 功能
 
@@ -41,13 +41,13 @@
 
 ## IndexedDB 同步與管理（可選）
 
-在「設定」明確啟用 IndexedDB 同步後，既有的「上傳本機設定／從伺服器同步」及對應自動開關會一併處理 IndexedDB。此功能預設關閉，設定只保存在目前網站／帳戶／裝置。
+在「設定」啟用 IndexedDB 手動同步後，既有的「上傳本機設定／從伺服器同步」按鈕會一併處理你選取的項目。IndexedDB 不會隨自動上傳或下載執行；設定只保存在目前網站／帳戶／裝置。
 
-- 範圍可選「所選資料庫／項目」或「同源的所有資料庫」。在「管理 IndexedDB」選取資料庫、物件儲存區或個別紀錄，再按「使用選取項目作為同步範圍」；管理視窗也提供單獨匯入、匯出和移除。
+- 在「管理 IndexedDB」逐項選取資料庫、物件儲存區或個別紀錄，再按「使用選取項目作為同步範圍」；設定中不再提供全同源資料庫同步模式。伺服器先依此範圍篩選再分塊傳輸，未選取的遠端資料不會下載到裝置。管理視窗也提供單獨匯入、匯出和移除。
 - 同步下載與伺服器上傳皆採合併：相同主鍵的紀錄以來源值更新，伺服器及本機的額外紀錄保留；同步本身不會刪除紀錄。刪除僅在本機管理視窗明確操作。
 - IndexedDB 有獨立的五格帳戶救援備份。每份傳輸／備份 JSON 上限 128 MiB，使用 1 MiB 分塊及完整性雜湊；瀏覽器必須支援 `indexedDB.databases()` 才能安全列出既有資料庫。
 - 會保留常見結構化資料型別、循環參照、Blob／File 與二進位值。無法安全序列化的值、資料庫結構衝突、鎖定或配額錯誤會明確停止，不會靜默略過。
-- 同步前保存完整本機 IndexedDB 快照；伺服器資料版本競爭會中止並提示重試。不同資料庫／物件儲存區的 IndexedDB 交易無法形成單一跨庫原子交易；若發生部分失敗，請使用 IndexedDB 五格備份還原。
+- 同步前保存選取範圍的本機 IndexedDB 救援快照；伺服器資料版本競爭會中止並提示重試。不同資料庫／物件儲存區的 IndexedDB 交易無法形成單一跨庫原子交易；若發生部分失敗，請使用 IndexedDB 五格備份還原。
 
 瀏覽器提供的 `navigator.storage.estimate()` 是整個來源的估算，並非 IndexedDB 專屬容量或保證上限。同步器不會嘗試清空或自行判定資料可刪除。
 
@@ -181,9 +181,9 @@ docker exec sillytavern node /home/node/app/public/scripts/extensions/third-part
 
 如果 `plugins/device-settings-sync` 已經是一般目錄，安裝器會拒絕覆寫。請先自行備份及移走舊目錄，再重新執行安裝器。
 
-若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，重啟容器後再試；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
+若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，然後重新啟動 SillyTavern 伺服器；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
 
-若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.8.1 後再重啟伺服器。
+若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.9.0 後重新啟動伺服器插件。
 
 ## 使用
 
@@ -256,11 +256,12 @@ JSON 檔案／備份請求上限為 **32 MiB**，超限拒絕且不修改既有�
 - `GET /backups`：最多五份摘要，不含設定值。
 - `POST /backups`：`{ operationId, reason, archive }`；`reason` 為 `upload`、`download`、`import`、`restore` 或 `delete`。
 - `GET /backups/:id`：僅讀取目前帳戶保留中的指定快照。
-- `GET /health`：能力標記包含 `backups-v1`、`atomic-sync-v1`、`full-storage-v1`、`indexeddb-sync-v1`、`indexeddb-chunks-v1`；舊後端缺少所需能力時停止相關功能並提示更新／重啟。
+- `GET /health`：能力標記包含 `backups-v1`、`atomic-sync-v1`、`full-storage-v1`、`indexeddb-sync-v1`、`indexeddb-chunks-v1`、`indexeddb-scoped-download-v1`；舊後端缺少所需能力時停止相關功能並提示更新／重啟。
 - `POST /commit`：`{ operationId, expectedRevision, deviceId, mutations }`，全部驗證後原子提交；版本競爭或識別碼內容不一致回傳 HTTP 409，同識別碼重試不重複套用。
 - `GET /commits/:id`：讀取本帳戶提交收據，用於恢復遺失回應。收據與資料一同寫入，計入既有 5 MiB 同步檔上限；單值限制與手動 API 相容性不變。
 - `GET /full-state`、`POST /full-commit`、`GET /full-commits/:id`：完整模式的獨立快照、原子版本提交及重試收據；最多 32 MiB JSON，與一般同步及五格救援備份分開。
 - `POST /indexeddb/transfers/start`、`PUT /indexeddb/transfers/:id/chunks/:index`、`POST /indexeddb/transfers/:id/finish`：分塊上傳及原子合併提交，最多 128 MiB，帳戶內版本控制並以操作識別碼去重。
+- `POST /indexeddb/state/scoped`、`GET /indexeddb/state/scoped/:id/chunks/:index`、`DELETE /indexeddb/state/scoped/:id`：依明確選取範圍建立暫存快照並分塊下載，傳輸後刪除暫存；未選取的伺服器資料不傳至裝置。
 - `GET /indexeddb/state` 與 `/indexeddb/state/chunks/:index`：讀取帳戶伺服器快照及分塊。
 - `GET /indexeddb/backups`、`GET /indexeddb/backups/:id`、`GET /indexeddb/backups/:id/chunks/:index`：讀取 IndexedDB 專用五格救援備份摘要與封存內容；與 localStorage 備份槽分開。
 

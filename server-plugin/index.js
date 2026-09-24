@@ -181,7 +181,7 @@ export async function init(router) {
     });
 
     router.get('/health', (_request, response) => {
-        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.8.1', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1'] });
+        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.9.0', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1', 'indexeddb-scoped-download-v1'] });
     });
 
     router.post('/indexeddb/transfers/start', async (request, response) => {
@@ -218,6 +218,31 @@ export async function init(router) {
             const index = Number(request.params.index);
             const [metadata, chunk] = await Promise.all([store.stateMetadata(), store.stateChunk(index)]);
             response.set('Cache-Control', 'no-store').json({ index, chunks: metadata.chunks, digest: metadata.digest, chunk });
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.post('/indexeddb/state/scoped', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            const metadata = await serialize(root, () => new IndexedDbTransferStore(root).startScopedState(request.body?.scope));
+            response.set('Cache-Control', 'no-store').json(metadata);
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.get('/indexeddb/state/scoped/:id/chunks/:index', async (request, response) => {
+        try {
+            const store = new IndexedDbTransferStore(getUserRoot(request));
+            const index = Number(request.params.index);
+            const metadata = await store.scopedTransferMetadata(request.params.id);
+            const chunk = await store.scopedStateChunk(request.params.id, index);
+            response.set('Cache-Control', 'no-store').json({ index, chunks: metadata.chunks, digest: metadata.digest, chunk });
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.delete('/indexeddb/state/scoped/:id', async (request, response) => {
+        try {
+            response.set('Cache-Control', 'no-store').json(await new IndexedDbTransferStore(getUserRoot(request))
+                .removeScopedState(request.params.id));
         } catch (error) { sendError(response, error); }
     });
 

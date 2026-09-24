@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.9.0 - 2026-09-25
+
+### 繁體中文
+
+- IndexedDB 只會在手動上傳／下載時處理明確選取的資料庫、儲存區或紀錄；localStorage 自動同步不再讀取或上傳 IndexedDB。
+- 移除全同源資料庫同步模式。舊版若啟用了該模式，升級後會自動關閉並要求重新選取範圍。
+- 同步前只掃描及備份選取範圍；選取單筆紀錄時直接讀取該鍵，避免載入同庫其他紀錄。
+- 新增伺服器端所選範圍分塊下載；未選取的 IndexedDB 遠端資料不再傳至裝置。伺服器插件版本升至 1.9.0，需更新並重啟才能使用 IndexedDB 同步。
+
+### 简体中文
+
+- IndexedDB 只在手动上传／下载时处理明确选中的数据库、存储区或记录；localStorage 自动同步不再读取或上传 IndexedDB。
+- 移除全同源数据库同步模式。旧版若启用了该模式，升级后会自动关闭并要求重新选择范围。
+- 同步前只扫描并备份选中范围；选择单条记录时直接读取该键，避免加载同一数据库中的其他记录。
+- 新增服务器端所选范围分块下载；未选中的 IndexedDB 远端数据不会传到设备。服务器插件升至 1.9.0，需更新并重启后才能使用 IndexedDB 同步。
+
+### English
+
+- IndexedDB now runs only during manual upload/download for explicitly selected databases, stores or records. Automatic localStorage sync no longer reads or uploads IndexedDB.
+- Remove the all-same-origin sync mode. Upgrades disable that legacy setting and ask the user to select a new scope.
+- Snapshot and rescue only the selected scope before sync. Selecting an individual record reads that key instead of loading other records from its database.
+- Add server-side scoped chunk downloads so unselected remote IndexedDB data is not sent to the device. The server plugin is now 1.9.0 and must be updated and restarted for IndexedDB sync.
+
 ## 1.8.3 - 2026-09-25
 
 ### 繁體中文

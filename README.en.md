@@ -4,7 +4,7 @@
 
 Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.8.3**. The IndexedDB manager opens quickly and marks unscanned sizes clearly; you can optionally estimate JSON sizes for all databases. This is a frontend-only update, so refresh the browser. Restart SillyTavern after first installing or updating the server plugin as described below.
+Version **1.9.0**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. Update the server plugin to 1.9.0 and restart SillyTavern to use selected-scope transfers; refresh the browser for the frontend update.
 
 ## Features
 
@@ -33,13 +33,13 @@ Full mode covers **localStorage only**, not IndexedDB, cookies or other browser 
 
 ## Optional IndexedDB sync and manager
 
-After explicitly enabling IndexedDB in Settings, the existing manual upload/download and corresponding automatic switches also process IndexedDB. It is off by default and the preference is local to this site/account/device.
+After enabling IndexedDB manual sync in Settings, the existing **Upload local settings / Sync from server** buttons also process the selected items. IndexedDB is excluded from automatic upload and download. The preference is local to this site/account/device.
 
-- Choose selected databases/items or all same-origin databases. In Manage IndexedDB, select databases, object stores or individual records and choose **Use selection as sync range**. Import, export and removal are also available per selection.
+- In Manage IndexedDB, select databases, object stores or individual records one by one and choose **Use selection as sync range**. The server filters by this scope before chunked transfer, so unselected remote data is not downloaded to the device. Settings no longer offer an all-same-origin sync mode. Import, export and removal remain available separately.
 - Upload and download are merge-only: incoming values replace matching primary keys, while extra server and local records remain. Sync never deletes records; removal is an explicit local manager action.
 - IndexedDB uses its own five account-private rescue slots. Each archive is capped at 128 MiB and transferred in 1 MiB chunks with integrity checks. The browser must support `indexedDB.databases()`.
 - Common structured values, cycles, Blob/File and binary data are retained. Unsupported values, schema conflicts, blocked databases and quota errors stop the operation instead of silently skipping data.
-- A complete local IndexedDB rescue snapshot is saved before sync. IndexedDB cannot provide one atomic transaction across different databases/object stores; recover partial failures from its separate backup slots.
+- A local rescue snapshot of the selected scope is saved before sync. IndexedDB cannot provide one atomic transaction across different databases/object stores; recover partial failures from its separate backup slots.
 
 `navigator.storage.estimate()` reports a whole-origin estimate, not an IndexedDB-only quota or guaranteed maximum. The extension never clears data or guesses which records are safe to remove.
 
@@ -180,11 +180,12 @@ All APIs use SillyTavern session authentication and CSRF protection. Under `/api
 - `GET /backups`: up to five summaries, without values.
 - `POST /backups`: `{ operationId, reason, archive }`; reasons are `upload`, `download`, `import`, `restore`, `delete`.
 - `GET /backups/:id`: a retained backup belonging to the current account.
-- `GET /health`: advertises `backups-v1`, `atomic-sync-v1`, `full-storage-v1`, `indexeddb-sync-v1` and `indexeddb-chunks-v1`. Missing capabilities pause affected work with an update/restart message.
+- `GET /health`: advertises `backups-v1`, `atomic-sync-v1`, `full-storage-v1`, `indexeddb-sync-v1`, `indexeddb-chunks-v1` and `indexeddb-scoped-download-v1`. Missing capabilities pause affected work with an update/restart message.
 - `POST /commit`: `{ operationId, expectedRevision, deviceId, mutations }`, validated completely before an atomic write. Version or operation-ID conflicts return HTTP 409; identical retries are idempotent.
 - `GET /commits/:id`: account-private receipt recovery for lost responses. Receipts and values are written together and count toward the existing 5 MiB state limit. Existing per-value limits and manual APIs remain compatible.
 - `GET /full-state`, `POST /full-commit`, `GET /full-commits/:id`: separate full snapshot, atomic versioned commit and retry receipt, limited to 32 MiB JSON. These are separate from regular sync and the five rescue backups.
 - `POST /indexeddb/transfers/start`, `PUT /indexeddb/transfers/:id/chunks/:index`, `POST /indexeddb/transfers/:id/finish`: chunked upload and atomic merge commit, capped at 128 MiB with account-scoped revision checks and idempotent operation IDs.
+- `POST /indexeddb/state/scoped`, `GET /indexeddb/state/scoped/:id/chunks/:index`, `DELETE /indexeddb/state/scoped/:id`: create and transfer a temporary snapshot filtered to the explicitly selected scope, then delete it; unselected server data is not sent to the device.
 - `GET /indexeddb/state` and `/indexeddb/state/chunks/:index`: read the account's server snapshot in chunks.
 - `GET /indexeddb/backups`, `GET /indexeddb/backups/:id`, `GET /indexeddb/backups/:id/chunks/:index`: list and retrieve the separate five-slot IndexedDB rescue archives.
 

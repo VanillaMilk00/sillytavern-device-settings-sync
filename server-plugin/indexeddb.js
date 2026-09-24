@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { INDEXEDDB_ARCHIVE_FORMAT, INDEXEDDB_CHUNK_BYTES, MAX_INDEXEDDB_ARCHIVE_BYTES, IndexedDbError, parseIndexedDbArchive, mergeArchiveObjects } from '../lib/indexeddb-model.js';
+import { INDEXEDDB_ARCHIVE_FORMAT, INDEXEDDB_CHUNK_BYTES, MAX_INDEXEDDB_ARCHIVE_BYTES, IndexedDbError, parseIndexedDbArchive, mergeArchiveObjects, selectIndexedDbArchive } from '../lib/indexeddb-model.js';
 import { StorageError } from '../lib/storage-model.js';
 
 const TRANSFERS = 'device-settings-sync-indexeddb-transfers';
@@ -108,6 +108,30 @@ function metadata(archive, revision, updatedAt, seeded, serialized = JSON.string
     const data = Buffer.from(serialized);
     return { revision, updatedAt, seeded, format: INDEXEDDB_ARCHIVE_FORMAT,
         size: data.byteLength, digest: hash(data), chunks: Math.ceil(data.byteLength / INDEXEDDB_CHUNK_BYTES) };
+}
+
+function scopedTransferInput(scope) {
+    if (scope?.kind === 'databases' && Array.isArray(scope.names) && scope.names.length > 0 && scope.names.length <= 100000
+        && scope.names.every(name => typeof name === 'string' && name.length > 0)) {
+        return { kind: 'databases', names: [...new Set(scope.names)] };
+    }
+    const validItem = item => {
+        if (!item || typeof item.database !== 'string' || !item.database.length
+            || (item.store !== undefined && (typeof item.store !== 'string' || !item.store.length))) return false;
+        if (item.keyToken === undefined) return true;
+        if (typeof item.store !== 'string' || typeof item.keyToken !== 'string') return false;
+        try { JSON.parse(item.keyToken); return true; } catch { return false; }
+    };
+    if (scope?.kind === 'items' && Array.isArray(scope.items) && scope.items.length > 0 && scope.items.length <= 100000
+        && scope.items.every(validItem)) {
+        const items = [...new Map(scope.items.map(item => [JSON.stringify(item), {
+            database: item.database,
+            ...(item.store === undefined ? {} : { store: item.store }),
+            ...(item.keyToken === undefined ? {} : { keyToken: item.keyToken }),
+        }])).values()];
+        return { kind: 'items', items };
+    }
+    fail('indexedDbInvalidTransfer');
 }
 
 export class IndexedDbTransferStore {
@@ -242,6 +266,48 @@ export class IndexedDbTransferStore {
         const text = JSON.stringify(state.archive || EMPTY_ARCHIVE);
         const buffer = Buffer.from(text);
         return buffer.subarray(index * INDEXEDDB_CHUNK_BYTES, (index + 1) * INDEXEDDB_CHUNK_BYTES).toString('base64');
+    }
+    async startScopedState(scope) {
+        const selectedScope = scopedTransferInput(scope);
+        await this.cleanExpired();
+        if ((await fs.readdir(this.directory)).length >= MAX_ACTIVE_TRANSFERS) fail('indexedDbTooManyTransfers');
+        const state = await readState(this.root);
+        const archive = selectIndexedDbArchive(state.archive, selectedScope);
+        const text = JSON.stringify(archive);
+        const data = Buffer.from(text, 'utf8');
+        if (data.byteLength > MAX_INDEXEDDB_ARCHIVE_BYTES) fail('indexedDbArchiveTooLarge');
+        const id = randomUUID();
+        const directory = path.join(this.directory, id);
+        const chunks = Math.ceil(data.byteLength / INDEXEDDB_CHUNK_BYTES);
+        const digest = hash(data);
+        await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+        try {
+            await atomicWrite(path.join(directory, 'archive.json'), data);
+            await atomicWrite(path.join(directory, 'session.json'), JSON.stringify({ kind: 'download', id,
+                createdAt: Date.now(), size: data.byteLength, chunks, digest }));
+        } catch (error) {
+            await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
+            throw error;
+        }
+        return { id, revision: state.revision, updatedAt: state.updatedAt, seeded: state.seeded,
+            stateDigest: state.digest || metadata(state.archive, state.revision, state.updatedAt, state.seeded).digest,
+            format: INDEXEDDB_ARCHIVE_FORMAT, size: data.byteLength, digest, chunks };
+    }
+    async scopedStateChunk(id, index) {
+        const { directory, session } = await this.session(id);
+        if (session.kind !== 'download' || !Number.isSafeInteger(index) || index < 0 || index >= session.chunks) fail('indexedDbTransferNotFound');
+        return readFileChunk(path.join(directory, 'archive.json'), index, session.size);
+    }
+    async scopedTransferMetadata(id) {
+        const { session } = await this.session(id);
+        if (session.kind !== 'download') fail('indexedDbTransferNotFound');
+        return { id: session.id, size: session.size, chunks: session.chunks, digest: session.digest };
+    }
+    async removeScopedState(id) {
+        const { directory, session } = await this.session(id);
+        if (session.kind !== 'download') fail('indexedDbTransferNotFound');
+        await fs.rm(directory, { recursive: true, force: true });
+        return { removed: true };
     }
     async listBackups() { return (await backupIndex(this.root)).records.map(({ digest, fileDigest, ...record }) => record); }
     async backupMetadata(id) {

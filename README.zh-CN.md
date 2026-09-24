@@ -4,7 +4,7 @@
 
 让同一个 SillyTavern 账户在手机、桌面及其他设备之间手动同步设置，并可选择自动同步可移植浏览器设置。
 
-当前版本：**1.8.3**。IndexedDB 管理器快速打开，未扫描的数据容量会明确标示；可按需估算全部数据库的 JSON 容量。本次仅更新前端，刷新浏览器即可；首次安装或更新服务器插件时，仍需按下方说明重启 SillyTavern。
+当前版本：**1.9.0**。IndexedDB 只会把明确选中的项目纳入手动同步，不会随 localStorage 自动同步。要使用新版“仅传输所选范围”，请将服务器插件更新至 1.9.0 并重启 SillyTavern；前端更新后刷新浏览器即可。
 
 ## 功能
 
@@ -33,13 +33,13 @@
 
 ## IndexedDB 同步与管理（可选）
 
-在「设置」中明确开启 IndexedDB 后，现有的手动上传／下载和对应自动开关会一并处理 IndexedDB。此功能默认关闭，配置仅保存在当前网站／账户／设备。
+在「设置」中开启 IndexedDB 手动同步后，现有的「上传本机设置／从服务器同步」按钮会一并处理选中项目。IndexedDB 不会随自动上传或下载运行；配置仅保存在当前网站／账户／设备。
 
-- 范围可选「选中的数据库／项目」或「同源所有数据库」。在「管理 IndexedDB」中选择数据库、对象存储或单条记录，再点「将选择用作同步范围」；也可以单独导入、导出和移除。
+- 在「管理 IndexedDB」中逐项选择数据库、对象存储区或单条记录，再点「将选择用作同步范围」；设置中不再提供全同源数据库同步模式。服务器会先按所选范围筛选再分块传输，未选中的远端数据不会下载到设备。管理器也支持单独导入、导出和移除。
 - 同步上传与下载均采用合并：相同主键的记录以来源值更新，服务器和本地的额外记录都会保留。同步不会删除记录；删除仅在本地管理界面明确执行。
 - 使用独立的五槽账户救援备份。每份归档最多 128 MiB，按 1 MiB 分块传输并校验完整性；浏览器需支持 `indexedDB.databases()`。
 - 支持常见结构化值、循环引用、Blob／File 和二进制值。无法安全序列化、数据库结构冲突、锁定或配额错误会中止操作，不会静默跳过。
-- 同步前保存完整本地 IndexedDB 快照。跨数据库／对象存储区无法形成单一原子事务；发生部分失败时可从独立备份槽恢复。
+- 同步前保存选中范围的本地 IndexedDB 救援快照。跨数据库／对象存储区无法形成单一原子事务；发生部分失败时可从独立备份槽恢复。
 
 `navigator.storage.estimate()` 是整个来源的估算，不是 IndexedDB 专属容量或保证上限。不会自动清空或推测数据是否可删除。
 
@@ -180,11 +180,12 @@ JSON 文件／备份请求限制 **32 MiB**，超限拒绝且不修改原数据�
 - `GET /backups`：最多五份摘要，不包含设置值。
 - `POST /backups`：`{ operationId, reason, archive }`，原因为 `upload`、`download`、`import`、`restore`、`delete`。
 - `GET /backups/:id`：仅访问当前账户保留中的指定快照。
-- `GET /health`：声明 `backups-v1`、`atomic-sync-v1`、`full-storage-v1`、`indexeddb-sync-v1`、`indexeddb-chunks-v1`；旧后端缺少所需能力时暂停相关功能并提示更新／重启。
+- `GET /health`：声明 `backups-v1`、`atomic-sync-v1`、`full-storage-v1`、`indexeddb-sync-v1`、`indexeddb-chunks-v1`、`indexeddb-scoped-download-v1`；旧后端缺少所需能力时暂停相关功能并提示更新／重启。
 - `POST /commit`：`{ operationId, expectedRevision, deviceId, mutations }`，完整验证后原子写入，版本或操作标识冲突返回 HTTP 409；相同请求重试不重复应用。
 - `GET /commits/:id`：当前账户的提交收据，用于恢复丢失响应。收据与数据同时写入，计入既有 5 MiB 同步文件上限；单值限制与手动 API 保持兼容。
 - `GET /full-state`、`POST /full-commit`、`GET /full-commits/:id`：独立的完整快照、原子版本提交和重试收据；上限 32 MiB JSON，与普通同步和五格救援备份分开。
 - `POST /indexeddb/transfers/start`、`PUT /indexeddb/transfers/:id/chunks/:index`、`POST /indexeddb/transfers/:id/finish`：分块上传与原子合并提交，上限 128 MiB，按账户校验版本并以操作标识去重。
+- `POST /indexeddb/state/scoped`、`GET /indexeddb/state/scoped/:id/chunks/:index`、`DELETE /indexeddb/state/scoped/:id`：按明确选中范围生成临时快照并分块下载，传输后删除临时文件；未选中的服务器数据不会传到设备。
 - `GET /indexeddb/state` 和 `/indexeddb/state/chunks/:index`：分块读取账户服务器快照。
 - `GET /indexeddb/backups`、`GET /indexeddb/backups/:id`、`GET /indexeddb/backups/:id/chunks/:index`：读取独立于 localStorage 的 IndexedDB 五槽救援备份。
 
