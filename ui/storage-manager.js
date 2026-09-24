@@ -537,7 +537,8 @@ export async function openStorageManager(api, { initialTab = 'local' } = {}) {
         }
     }
     for (const tab of ['local', 'backups', 'cleanup', 'indexeddb', 'indexeddbBackups']) {
-        const node = button(msg(tab), () => guard(() => showTab(tab)));
+        const labelKey = tab === 'indexeddbBackups' ? 'indexedDbBackups' : tab;
+        const node = button(msg(labelKey), () => guard(() => showTab(tab)));
         node.dataset.tab = tab;
         tabs.append(node);
     }
