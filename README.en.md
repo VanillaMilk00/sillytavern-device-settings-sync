@@ -4,7 +4,7 @@
 
 Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.8.2**. For this IndexedDB manager UI update, refreshing the browser is enough. Restart SillyTavern after first installing or updating the server plugin as described below.
+Version **1.8.3**. The IndexedDB manager opens quickly and marks unscanned sizes clearly; you can optionally estimate JSON sizes for all databases. This is a frontend-only update, so refresh the browser. Restart SillyTavern after first installing or updating the server plugin as described below.
 
 ## Features
 

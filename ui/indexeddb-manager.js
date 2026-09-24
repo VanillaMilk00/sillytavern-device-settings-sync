@@ -21,7 +21,10 @@ function download(archive, filename = 'indexedDB-backup.json') {
 function recordCount(archive) { return archive.databases.reduce((sum, db) => sum + db.stores.reduce((part, store) => part + store.records.length, 0), 0); }
 const recordSizeCache = new WeakMap();
 function recordBytes(record) {
-    if (!recordSizeCache.has(record)) recordSizeCache.set(record, estimateJsonBytes(record));
+    if (!recordSizeCache.has(record)) {
+        const serializedRecord = record.keyToken === undefined ? record : { key: record.key, value: record.value };
+        recordSizeCache.set(record, estimateJsonBytes(serializedRecord));
+    }
     return recordSizeCache.get(record);
 }
 function keyLabel(key) {
@@ -209,6 +212,8 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
     const selected = new Map();
     const expandedDatabases = new Set(archive.databases.map(database => database.name));
     const expandedStores = new Set();
+    let scanningAllSizes = false;
+    let scanAllButton;
     const list = element('div', undefined, 'dss_idb_tree');
     const summary = element('p', undefined, 'dss_summary');
     const quota = element('p', undefined, 'dss_note');
@@ -298,7 +303,7 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
         renderTree();
     }
     async function loadStorePage(database, store) {
-        if (store.loading || (store.loaded && !store.hasMore)) return;
+        if (scanningAllSizes || store.loading || (store.loaded && !store.hasMore)) return;
         store.loading = true;
         status.textContent = msg('indexedDbLoadingRecords');
         status.classList.remove('dss_error');
@@ -310,6 +315,11 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
             store.total = page.total;
             store.hasMore = page.hasMore;
             store.loaded = true;
+            if (!store.hasMore) {
+                store.measuredCount = store.records.length;
+                store.measuredBytes = store.records.reduce((sum, record) => sum + sizeOf(database.name, store.name, record), 0);
+                store.sizeScanned = true;
+            }
         } catch (error) {
             status.textContent = errorText(error);
             status.classList.add('dss_error');
@@ -319,9 +329,53 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
             renderTree();
         }
     }
+    async function scanAllSizes() {
+        if (scanningAllSizes) return;
+        scanningAllSizes = true;
+        scanAllButton.disabled = true;
+        list.style.pointerEvents = 'none';
+        list.setAttribute('aria-busy', 'true');
+        status.classList.remove('dss_error');
+        try {
+            for (const database of archive.databases) for (const store of database.stores) {
+                if (store.sizeScanned) continue;
+                let afterKeyToken;
+                let hasMore = true;
+                let count = 0;
+                let estimatedBytes = 0;
+                let total = null;
+                while (hasMore) {
+                    const page = await api.readIndexedDbStorePage({ databaseName: database.name, storeName: store.name,
+                        afterKeyToken, limit: 100 });
+                    total = page.total;
+                    count += page.records.length;
+                    estimatedBytes += page.records.reduce((sum, record) => sum + sizeOf(database.name, store.name, record), 0);
+                    afterKeyToken = page.records.at(-1)?.keyToken;
+                    hasMore = page.hasMore;
+                    status.textContent = msg('indexedDbSizeScanProgress', { database: database.name, store: store.name, count,
+                        total: total ?? count });
+                    if (hasMore && !page.records.length) throw new Error('IndexedDB pagination did not advance.');
+                }
+                store.total = total ?? count;
+                store.measuredCount = count;
+                store.measuredBytes = estimatedBytes;
+                store.sizeScanned = true;
+                renderTree();
+            }
+            const totals = archive.databases.flatMap(database => database.stores)
+                .reduce((result, store) => ({ count: result.count + (store.measuredCount || 0), size: result.size + (store.measuredBytes || 0) }), { count: 0, size: 0 });
+            status.textContent = msg('indexedDbSizeScanComplete', { count: totals.count, size: bytes(totals.size) });
+        } finally {
+            scanningAllSizes = false;
+            scanAllButton.disabled = false;
+            list.style.pointerEvents = '';
+            list.removeAttribute('aria-busy');
+            renderTree();
+        }
+    }
     function renderTree() {
         list.replaceChildren();
-        let shownRecords = 0, allRecords = 0, loadedBytes = 0;
+        let shownRecords = 0, allRecords = 0;
         for (const database of archive.databases) {
             const dbItem = { kind: 'database', database: database.name };
             const dbDetails = element('details', undefined, 'dss_idb_database');
@@ -335,8 +389,15 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
             const dbCheck = element('input'); dbCheck.type = 'checkbox'; dbCheck.checked = dbState.checked; dbCheck.indeterminate = dbState.indeterminate;
             dbCheck.addEventListener('click', event => event.stopPropagation());
             dbCheck.addEventListener('change', () => addSelection(dbItem, dbCheck.checked));
-            const databaseBytes = database.stores.reduce((sum, store) => sum + store.records.reduce((part, record) => part + sizeOf(database.name, store.name, record), 0), 0);
-            dbSummary.append(dbCheck, element('strong', database.name), element('small', ` · v${database.version} · ${database.stores.length} ${msg('indexedDbStores')} · ${msg('indexedDbLoadedSize', { size: bytes(databaseBytes) })}`));
+            const databaseBytes = database.stores.reduce((sum, store) => sum + (store.sizeScanned
+                ? store.measuredBytes : store.records.reduce((part, record) => part + sizeOf(database.name, store.name, record), 0)), 0);
+            const unscannedStores = database.stores.filter(store => !store.sizeScanned).length;
+            const databaseSizeLabel = unscannedStores === 0
+                ? msg('indexedDbEstimatedSize', { size: bytes(database.stores.reduce((sum, store) => sum + (store.measuredBytes || 0), 0)) })
+                : database.stores.some(store => store.sizeScanned || store.records.length)
+                    ? msg('indexedDbPartialSize', { size: bytes(databaseBytes), pending: unscannedStores })
+                    : msg('indexedDbSizeNotScanned');
+            dbSummary.append(dbCheck, element('strong', database.name), element('small', ` · v${database.version} · ${database.stores.length} ${msg('indexedDbStores')} · ${databaseSizeLabel}`));
             dbDetails.append(dbSummary);
             for (const store of database.stores) {
                 const storeItem = { kind: 'store', database: database.name, store: store.name };
@@ -358,11 +419,15 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
                 const storeBytes = store.records.reduce((sum, record) => sum + sizeOf(database.name, store.name, record), 0);
                 const recordCountLabel = store.total === null
                     ? msg('indexedDbExpandToLoad')
-                    : `${store.records.length}/${store.total} ${msg('indexedDbRecords')}`;
-                storeSummary.append(storeCheck, element('span', store.name), element('small', ` · ${recordCountLabel} · ${msg('indexedDbLoadedSize', { size: bytes(storeBytes) })}`));
+                    : `${store.sizeScanned ? store.measuredCount : store.records.length}/${store.total} ${msg('indexedDbRecords')}`;
+                const storeSizeLabel = store.sizeScanned
+                    ? msg('indexedDbEstimatedSize', { size: bytes(store.measuredBytes) })
+                    : store.records.length
+                        ? msg('indexedDbLoadedSize', { size: bytes(storeBytes) })
+                        : msg('indexedDbSizeNotScanned');
+                storeSummary.append(storeCheck, element('span', store.name), element('small', ` · ${recordCountLabel} · ${storeSizeLabel}`));
                 storeDetails.append(storeSummary);
                 allRecords += store.records.length;
-                loadedBytes += storeBytes;
                 const matchingRecords = store.records.filter(record => {
                     if (!search.value) return true;
                     const labelText = `${keyLabel(record.key)} · ${bytes(sizeOf(database.name, store.name, record))}`;
@@ -392,8 +457,23 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
             }
             list.append(dbDetails);
         }
-        summary.textContent = msg('indexedDbSummary', { databases: archive.databases.length, count: allRecords,
-            size: bytes(loadedBytes), selected: selected.size, visible: shownRecords });
+        const stores = archive.databases.flatMap(database => database.stores);
+        const unscannedStores = stores.filter(store => !store.sizeScanned).length;
+        if (unscannedStores === 0) {
+            const measuredCount = stores.reduce((sum, store) => sum + (store.measuredCount || 0), 0);
+            const measuredBytes = stores.reduce((sum, store) => sum + (store.measuredBytes || 0), 0);
+            summary.textContent = msg('indexedDbSummaryComplete', { databases: archive.databases.length, count: measuredCount,
+                size: bytes(measuredBytes), selected: selected.size, visible: shownRecords });
+        } else {
+            const hasKnownSize = stores.some(store => store.sizeScanned || store.records.length > 0);
+            const knownBytes = stores.reduce((sum, store) => sum + (store.sizeScanned ? store.measuredBytes
+                : store.records.reduce((part, record) => part + recordBytes(record), 0)), 0);
+            summary.textContent = hasKnownSize
+                ? msg('indexedDbSummaryPartial', { databases: archive.databases.length, count: allRecords,
+                    size: bytes(knownBytes), pending: unscannedStores, selected: selected.size, visible: shownRecords })
+                : msg('indexedDbSummaryUnscanned', { databases: archive.databases.length, pending: unscannedStores,
+                    selected: selected.size, visible: shownRecords });
+        }
         const unsupportedValues = archive.databases.reduce((sum, database) => sum + database.stores.reduce((part, store) =>
             part + store.records.filter(record => record.value?.$type === 'unsupported-display').length, 0), 0);
         unsupportedHint.hidden = !unsupportedValues;
@@ -401,6 +481,7 @@ export async function renderIndexedDbManager({ api, content, status, guard, refr
     }
     search.addEventListener('input', renderTree);
     toolbar.append(search,
+        (scanAllButton = button(msg('indexedDbScanAll'), () => guard(scanAllSizes))),
         button(msg('indexedDbSelectAll'), () => { selected.clear(); archive.databases.forEach(db => selected.set(token({ kind: 'database', database: db.name }), { kind: 'database', database: db.name })); renderTree(); }),
         button(msg('clearSelection'), () => { selected.clear(); renderTree(); }),
         button(msg('rescan'), () => guard(async () => { await refresh('indexeddb'); })));

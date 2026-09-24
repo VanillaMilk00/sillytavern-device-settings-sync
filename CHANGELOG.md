@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.8.3 - 2026-09-25
+
+### 繁體中文
+
+- 未讀取的 IndexedDB 容量不再顯示為 0 B，改為明確標示尚未估算。
+- 新增按需掃描全部儲存區的 JSON 容量與紀錄數；維持管理器開啟時的快速延遲載入。純前端更新，無須重啟伺服器插件。
+
+### 简体中文
+
+- 未读取的 IndexedDB 容量不再显示为 0 B，改为明确标示尚未估算。
+- 新增按需扫描全部存储区的 JSON 容量和记录数；管理器仍快速延迟加载。本次仅更新前端，无需重启服务器插件。
+
+### English
+
+- Unread IndexedDB sizes are now labeled as not estimated instead of 0 B.
+- Add an on-demand scan for estimated JSON sizes and record counts across all stores while keeping the manager fast to open. Frontend-only update; no server-plugin restart is needed.
+
 ## 1.8.2 - 2026-09-24
 
 ### 繁體中文
