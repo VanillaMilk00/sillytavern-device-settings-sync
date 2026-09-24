@@ -75,7 +75,8 @@ function fixture() {
             }
             throw new Error('Unexpected request ' + path);
         },
-        options: () => f.fullMode ? { fullStorage: true } : {}, persistDevice: () => 'device_local', busy: () => f.busy,
+        options: () => f.fullMode ? { fullStorage: true, selectedScopeConfigured: true } : { selectedScopeConfigured: true },
+        persistDevice: () => 'device_local', busy: () => f.busy,
         observe() { f.observed++; return () => { f.observed--; }; },
         makeBackup: direction => ({ direction }),
         async backup() { f.backups++; if (f.backupFailure) throw f.backupFailure; if (f.afterBackup) await f.afterBackup(); },

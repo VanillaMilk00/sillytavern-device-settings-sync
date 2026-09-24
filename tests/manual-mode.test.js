@@ -47,8 +47,8 @@ test('publishes the verified SillyTavern and Node.js compatibility floor', () =>
     assert.equal(serverPackage.engines.node, '>=18');
 });
 
-test('explains the Docker per-user installation cause when the server route is missing', () => {
+test('explains how to install and restart the server plugin when the route is missing', () => {
     assert.match(source, /response\.status === 404/u);
-    assert.match(source, /installed the Docker extension for yourself/u);
-    assert.match(source, /auto-detect installation command/u);
+    assert.match(source, /Verify the server plugin installation in the README/u);
+    assert.match(source, /then restart SillyTavern/u);
 });
