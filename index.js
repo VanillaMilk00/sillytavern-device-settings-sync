@@ -449,6 +449,7 @@ function saveIndexedDbConfig(patch) {
     localStorage.setItem(indexedDbConfigKey(), JSON.stringify(value));
     const enabled = document.querySelector('#dss_indexeddb_enabled');
     if (enabled) enabled.checked = value.enabled;
+    updateManualActionLabels();
 }
 
 function archiveSource() {
@@ -562,10 +563,28 @@ async function confirmManualAction(title, message, okButton) {
     return result === POPUP_RESULT.AFFIRMATIVE;
 }
 
+function manualActionTitle(action, includesIndexedDb = indexedDbConfig().enabled) {
+    const key = `dss.${action}.${includesIndexedDb ? 'withIndexedDbTitle' : 'title'}`;
+    const fallback = action === 'pull'
+        ? includesIndexedDb ? 'Download localStorage + selected IndexedDB' : 'Download localStorage'
+        : includesIndexedDb ? 'Upload localStorage + selected IndexedDB' : 'Upload localStorage';
+    return tr(key, fallback);
+}
+
+function updateManualActionLabels() {
+    const includesIndexedDb = indexedDbConfig().enabled;
+    for (const [action, id] of [['pull', 'dss_pull'], ['push', 'dss_push']]) {
+        const button = document.getElementById(id);
+        if (!button) continue;
+        button.dataset.i18n = `dss.${action}.${includesIndexedDb ? 'withIndexedDbTitle' : 'title'}`;
+        button.textContent = manualActionTitle(action, includesIndexedDb);
+    }
+}
+
 async function confirmManualPull() {
     const extra = indexedDbConfig().enabled ? '\n\n' + msg('indexedDbSyncConfirmation') : '';
     return confirmManualAction(
-        tr('dss.pull.title', 'Sync from server'),
+        manualActionTitle('pull'),
         (localStorageMode() === 'full' ? msg('fullPullConfirm') : localStorageMode() === 'selected' ? msg('selectedPullConfirm') : tr(
             'dss.pull.confirmMessage',
             'This will overwrite syncable settings on this device with the server settings. Local changes that have not been uploaded may be lost, and the page will reload automatically when complete. A full localStorage snapshot, including caches and credentials, will first be saved to this account on the server. Continue?',
@@ -577,7 +596,7 @@ async function confirmManualPull() {
 async function confirmManualPush() {
     const extra = indexedDbConfig().enabled ? '\n\n' + msg('indexedDbSyncConfirmation') : '';
     return confirmManualAction(
-        tr('dss.push.title', 'Upload local settings'),
+        manualActionTitle('push'),
         (localStorageMode() === 'full' ? msg('fullPushConfirm') : localStorageMode() === 'selected' ? msg('selectedPushConfirm') : tr(
             'dss.push.confirmMessage',
             'This will replace the server sync data with settings from this device. Portable settings that exist on the server but were deleted locally will also be deleted. A full localStorage snapshot, including caches and credentials, will first be saved to this account on the server. Continue?',
@@ -752,9 +771,7 @@ function renderStatus() {
         applying: msg('applying'),
         probing: msg('probing'),
     };
-    const action = diagnostics.lastAction === 'upload'
-        ? tr('dss.push.title', 'Upload local settings')
-        : tr('dss.pull.title', 'Sync from server');
+    const action = manualActionTitle(diagnostics.lastAction === 'upload' ? 'push' : 'pull');
     target.textContent = [
         formatText('dss.status.line', 'Status: {status}', { status: labels[diagnostics.status] || diagnostics.status }),
         formatText(
@@ -791,6 +808,7 @@ function bindPanel() {
     }
     const initialIdbConfig = indexedDbConfig();
     document.querySelector('#dss_indexeddb_enabled').checked = initialIdbConfig.enabled;
+    updateManualActionLabels();
     const menu = document.querySelector('#dss_settings_menu');
     const toggle = document.querySelector('#dss_settings_toggle');
     toggle?.addEventListener('click', () => {
@@ -886,7 +904,7 @@ function createPanel() {
                     <b data-i18n="dss.panel.manualHeading">Manual mode</b><br>
                     <span data-i18n="dss.panel.manualNotice">No settings are downloaded, uploaded, polled, or monitored when the page loads. The extension connects only when you use a sync button below.</span>
                 </div>
-                <small data-i18n="dss.panel.description">“Upload local settings” first saves the current SillyTavern account and extension settings, then uploads portable browser settings. “Sync from server” downloads settings and reloads the page once to apply them completely. OAuth and login credentials stored in localStorage are included; HttpOnly login cookies cannot be synchronized.</small>
+                <small data-i18n="dss.panel.description">These buttons sync the selected localStorage range. Upload first saves SillyTavern account and extension settings; download reloads the page. Selected IndexedDB records are included only when enabled in Settings. localStorage may contain credentials; HttpOnly login cookies cannot be synchronized.</small>
                 <button id="dss_settings_toggle" class="menu_button" type="button" aria-expanded="false" aria-controls="dss_settings_menu" data-i18n="dss.manager.settingsTitle">Settings</button>
                 <div id="dss_settings_menu" hidden>
                     <div id="dss_auto"></div>
@@ -905,8 +923,8 @@ function createPanel() {
                     <textarea id="dss_excludes" rows="3" placeholder="example-cache:*" data-i18n="[placeholder]dss.panel.excludesPlaceholder"></textarea>
                 </div>
                 <div class="dss_actions">
-                    <button id="dss_pull" class="menu_button" data-i18n="dss.pull.title">Sync from server</button>
-                    <button id="dss_push" class="menu_button" data-i18n="dss.push.title">Upload local settings</button>
+                    <button id="dss_pull" class="menu_button" data-i18n="dss.pull.title">Download localStorage</button>
+                    <button id="dss_push" class="menu_button" data-i18n="dss.push.title">Upload localStorage</button>
                     <button id="dss_reload" class="menu_button" data-i18n="dss.panel.reloadButton">Reload to apply</button>
                     <button id="dss_copy" class="menu_button" data-i18n="dss.panel.copyButton">Copy diagnostics</button>
                     <button id="dss_manage" class="menu_button" data-i18n="dss.manager.manager">Manage localStorage</button>

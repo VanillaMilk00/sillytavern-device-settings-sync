@@ -33,7 +33,7 @@ Full mode covers **localStorage only**, not IndexedDB, cookies or other browser 
 
 ## Optional IndexedDB sync and manager
 
-After enabling IndexedDB manual sync in Settings, the existing **Upload local settings / Sync from server** buttons also process the selected items. IndexedDB is excluded from automatic upload and download. The preference is local to this site/account/device.
+After enabling IndexedDB manual sync in Settings and selecting a scope, the buttons change to **Upload / Download localStorage + selected IndexedDB** and also process the selected items. IndexedDB is excluded from automatic upload and download. The preference is local to this site/account/device.
 
 - In Manage IndexedDB, select databases, object stores or individual records one by one and choose **Use selection as sync range**. The server filters by this scope before chunked transfer, so unselected remote data is not downloaded to the device. Settings no longer offer an all-same-origin sync mode. Import, export and removal remain available separately.
 - Upload and download are merge-only: incoming values replace matching primary keys, while extra server and local records remain. Sync never deletes records; removal is an explicit local manager action.
@@ -128,7 +128,7 @@ See the [official Android guide](https://docs.sillytavern.app/installation/andro
 
 ## Sync and five backup slots
 
-Use **Upload local settings** on the source device, then **Sync from server** on another device using the same account. Download automatically reloads the page. Upload mirrors removals of portable keys from the source device to the server.
+Use **Upload localStorage** on the source device, then **Download localStorage** on another device using the same account. Download automatically reloads the page. Upload mirrors removals of portable keys from the source device to the server.
 
 Both actions create a full snapshot of the **current device's localStorage before changes**, after confirmation. Cancel creates nothing; backup failure aborts sync; a later sync failure keeps the rescue backup. The sixth successful backup evicts the oldest, using atomic publication and per-account serialization. A transport retry uses the same operation ID and does not consume another slot, even after eviction. The index retains operation IDs, backup IDs and digest receipts without setting values for deduplication across eviction and server restarts; only five snapshot contents are retained.
 

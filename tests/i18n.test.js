@@ -13,6 +13,7 @@ function referencedLocaleKeys() {
     for (const match of source.matchAll(/(?:tr|formatText)\(\s*'([^']+)'/gu)) keys.add(match[1]);
     for (const match of source.matchAll(/data-i18n="(?:\[[^\]]+\])?([^"]+)"/gu)) keys.add(match[1]);
     for (const match of messages.matchAll(/^    (\w+): '/gmu)) keys.add('dss.manager.' + match[1]);
+    for (const action of ['pull', 'push']) keys.add(`dss.${action}.withIndexedDbTitle`);
     return [...keys].sort();
 }
 
@@ -29,8 +30,8 @@ test('provides every referenced translation in both Chinese locales', () => {
 
 test('uses English as the built-in fallback language', () => {
     assert.match(source, />Device Settings Sync</u);
-    assert.match(source, />Sync from server</u);
-    assert.match(source, />Upload local settings</u);
+    assert.match(source, />Download localStorage</u);
+    assert.match(source, />Upload localStorage</u);
     assert.doesNotMatch(source, /[一-龥]/u);
 });
 
