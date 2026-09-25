@@ -68,6 +68,23 @@ test('reloading a dependency switches the entire worker without changing the ser
     } finally { await qa.close(); }
 });
 
+test('a linked extension source is checked against its canonical directory', async () => {
+    const qa = await fixture();
+    let linkedManager;
+    try {
+        const linked = path.join(qa.root, 'linked-extension');
+        await fs.symlink(qa.sourceRoot, linked, process.platform === 'win32' ? 'junction' : 'dir');
+        const otherData = path.join(qa.root, 'linked-data');
+        await fs.mkdir(otherData);
+        linkedManager = new RuntimeManager({ sourceRoot: linked, dataRoot: otherData, serverRoot: qa.serverRoot });
+        await linkedManager.start();
+        assert.equal((await linkedManager.invoke(qa.request())).body.marker, 'old');
+    } finally {
+        if (linkedManager) await linkedManager.close();
+        await qa.close();
+    }
+});
+
 test('incomplete, modified and broken candidates keep the previous worker active', async () => {
     const qa = await fixture();
     try {

@@ -75,7 +75,7 @@ Preferences, baselines and scheduling are internal data: excluded from ordinary 
 
 ## Installation and upgrade
 
-Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. All 126 v1.11.0 Node unit/behavior tests and syntax checks pass. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium passed 30 management, 14 automatic-mode and 2 runtime-update browser checks, plus 9 server-security checks. Firefox, WebKit and physical mobile devices have not been tested. Earlier sync versions were also tested on SillyTavern 1.18.0; these results do not establish compatibility with every model extension, host version or browser. CI is configured for Windows/Linux and Node.js 18, 20 and 24.
+Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. All 127 v1.11.0 Node unit/behavior tests and syntax checks pass. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium passed 30 management, 14 automatic-mode and 2 runtime-update browser checks, plus 9 server-security checks. Firefox, WebKit and physical mobile devices have not been tested. Earlier sync versions were also tested on SillyTavern 1.18.0; these results do not establish compatibility with every model extension, host version or browser. CI is configured for Windows/Linux and Node.js 18, 20 and 24.
 
 1. In Extensions → Install extension, enter:
 

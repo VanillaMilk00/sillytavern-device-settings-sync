@@ -103,7 +103,7 @@ try {
 
 需要 SillyTavern 1.14.0 或更新版本、Node.js 18 或更新版本，以及已啟用的 Server Plugins。
 
-v1.11.0 有 126 項單元／行為測試與語法檢查；另在隔離的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 環境通過 30 項管理介面、14 項自動模式及 2 項更新載入器瀏覽器檢查。9 項伺服器安全檢查涵蓋帳戶隔離與 CSRF。Firefox、WebKit 與實體手機尚未驗證；既有同步功能也曾在 SillyTavern 1.18.0 測試。CI 設定覆蓋 Windows／Linux 與 Node.js 18、20、24。
+v1.11.0 有 127 項單元／行為測試與語法檢查；另在隔離的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 環境通過 30 項管理介面、14 項自動模式及 2 項更新載入器瀏覽器檢查。9 項伺服器安全檢查涵蓋帳戶隔離與 CSRF。Firefox、WebKit 與實體手機尚未驗證；既有同步功能也曾在 SillyTavern 1.18.0 測試。CI 設定覆蓋 Windows／Linux 與 Node.js 18、20、24。
 
 1.12.13 至 1.13.x 的官方原始碼雖然已具備本擴充所需 API，但尚未完成實機驗證，因此目前不列入正式支援。1.12.12 或更早版本缺少完整的工作階段期限或 CSRF 介面，不支援。
 

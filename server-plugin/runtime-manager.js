@@ -120,15 +120,17 @@ export class RuntimeManager {
     }
 
     async verifyFiles(directory, manifest) {
+        const realDirectory = await fs.realpath(directory);
         for (const file of manifest.files) {
             const target = path.resolve(directory, file.path);
-            if (!within(directory, target) || !within(directory, await fs.realpath(target))) throw resultError('runtimeSourceInvalid');
+            if (!within(directory, target) || !within(realDirectory, await fs.realpath(target))) throw resultError('runtimeSourceInvalid');
             if (sha256(await fs.readFile(target)) !== file.sha256) throw resultError('runtimeSourceInvalid');
         }
     }
 
     async prepare(manifest) {
         await fs.mkdir(this.cacheRoot, { recursive: true, mode: 0o700 });
+        const realSourceRoot = await fs.realpath(this.sourceRoot);
         const destination = path.join(this.cacheRoot, manifest.build);
         if (await fs.stat(destination).then(() => true, () => false)) {
             await this.verifyFiles(destination, manifest);
@@ -140,7 +142,7 @@ export class RuntimeManager {
         try {
             for (const file of manifest.files) {
                 const source = path.resolve(this.sourceRoot, file.path);
-                if (!within(this.sourceRoot, source) || !within(this.sourceRoot, await fs.realpath(source))) throw resultError('runtimeSourceInvalid');
+                if (!within(this.sourceRoot, source) || !within(realSourceRoot, await fs.realpath(source))) throw resultError('runtimeSourceInvalid');
                 const content = await fs.readFile(source);
                 if (sha256(content) !== file.sha256) throw resultError('runtimeSourceInvalid');
                 const target = path.join(temporary, file.path);

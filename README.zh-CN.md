@@ -75,7 +75,7 @@ try {
 
 ## 安装与升级
 
-需要 SillyTavern 1.14.0+、Node.js 18+，并启用 Server Plugins。v1.11.0 的 126 项单元／行为测试及语法检查通过；在隔离的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 环境，还通过 30 项管理界面、14 项自动模式、2 项热更新浏览器检查，以及 9 项服务器安全检查。Firefox、WebKit 和实体手机尚未验证；旧版同步功能也曾在 SillyTavern 1.18.0 测试。CI 配置覆盖 Windows／Linux 与 Node.js 18、20、24。
+需要 SillyTavern 1.14.0+、Node.js 18+，并启用 Server Plugins。v1.11.0 的 127 项单元／行为测试及语法检查通过；在隔离的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 环境，还通过 30 项管理界面、14 项自动模式、2 项热更新浏览器检查，以及 9 项服务器安全检查。Firefox、WebKit 和实体手机尚未验证；旧版同步功能也曾在 SillyTavern 1.18.0 测试。CI 配置覆盖 Windows／Linux 与 Node.js 18、20、24。
 
 1. 在「扩展 → 安装扩展」中输入：
 
