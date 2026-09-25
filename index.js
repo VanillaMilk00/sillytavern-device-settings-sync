@@ -8,7 +8,7 @@ import { readStorage, createArchive, serializeArchive, totalBytes, assertUnchang
 import { msg, errorText, bytes } from './lib/messages.js';
 import { openStorageManager } from './ui/storage-manager.js';
 import { probeCapacity } from './lib/capacity-probe.js';
-import { AutoSync } from './lib/auto-sync.js';
+import { IncrementalAutoSync } from './lib/incremental-auto-sync.js';
 import { IndexedDbError, snapshotIndexedDB, inspectIndexedDB, readIndexedDbStorePage, serializeIndexedDbArchive, mergeIndexedDbArchive, mergeArchiveObjects, deleteIndexedDbItems, selectIndexedDbArchive } from './lib/indexeddb-model.js';
 import { uploadIndexedDbArchive, downloadIndexedDbArchive, digestHex } from './lib/indexeddb-transfer.js';
 import { AUTO_PREFIX, planRemote, sortedEntries } from './lib/auto-core.js';
@@ -19,7 +19,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.9.0';
+const VERSION = '1.10.0';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -380,6 +380,8 @@ async function request(path, options = {}) {
     return body;
 }
 
+function requestHeaders() { return getRequestHeaders(); }
+
 async function requireFullSupport() {
     const health = await request('/health');
     if (!health.capabilities?.includes('full-storage-v1')) throw new StorageError('fullBackendMissing');
@@ -438,6 +440,7 @@ function restorePullResult() {
 function setOperationState(status, inFlight) {
     diagnostics.status = status;
     operationInFlight = inFlight;
+    automatic?.operationStateChanged(inFlight);
     for (const button of document.querySelectorAll('#device_settings_sync_panel button')) {
         button.disabled = inFlight;
     }
@@ -506,7 +509,7 @@ async function showManager(initialTab = 'local') {
     try {
         await openStorageManager({
             getSettings, filterOptions, source: archiveSource,
-            setSyncScope: scope => {
+            setSyncScope: scope => coordinated(async () => {
                 if (scope.kind === 'keys') {
                     scope = { kind: 'keys', keys: [...new Set(scope.keys.filter(key => !isInternalKey(key)))] };
                     if (!scope.keys.length) throw new StorageError('selectedScopeEmpty');
@@ -516,7 +519,7 @@ async function showManager(initialTab = 'local') {
                 const mode = document.querySelector('#dss_storage_mode');
                 if (mode) mode.value = 'selected';
                 refreshSnapshot();
-            },
+            }).then(() => automatic?.scopeChanged()),
             snapshotIndexedDb: (scope, options) => snapshotIndexedDB({ scope, ...options }),
             inspectIndexedDb: () => inspectIndexedDB(),
             readIndexedDbStorePage: options => readIndexedDbStorePage(options),
@@ -547,6 +550,13 @@ async function showManager(initialTab = 'local') {
             }),
             listBackups: () => request('/backups'),
             getBackup: id => request('/backups/' + encodeURIComponent(id)),
+            listServerVersions: mode => request(`/incremental/versions?mode=${encodeURIComponent(mode)}`),
+            getServerVersion: (id, mode) => request(`/incremental/versions/${encodeURIComponent(id)}?mode=${encodeURIComponent(mode)}`),
+            restoreServerVersion: (id, mode) => coordinated(async () => {
+                const state = await request(`/incremental/state?mode=${encodeURIComponent(mode)}`);
+                return request(`/incremental/versions/${encodeURIComponent(id)}/restore`, { method: 'POST',
+                    body: JSON.stringify({ mode, expectedRevision: state.revision, deviceId: getDeviceId() }) });
+            }),
             onChanged: refreshSnapshot,
         }, { initialTab });
     } catch (error) {
@@ -676,6 +686,27 @@ async function manualPullLocked({ reload = true } = {}) {
     }
 }
 
+async function applyAutomaticSnapshot(state, options, allowedKeys = null) {
+    if (operationInFlight) throw new StorageError('operationBusy');
+    setOperationState('automatic-applying', true);
+    try {
+        const before = readStorage(localStorage);
+        const allChanges = planRemote(before, state, options).changes;
+        const changes = allowedKeys ? allChanges.filter(change => allowedKeys.has(change.key)) : allChanges;
+        if (!changes.length) return 0;
+        await backupCurrentStorage('download');
+        const count = applyPlan(localStorage, { before, changes });
+        diagnostics.pulledChanges += count;
+        diagnostics.lastAction = 'download';
+        diagnostics.lastSyncAt = new Date().toISOString();
+        refreshSnapshot();
+        sessionStorage.setItem(PULL_RESULT_KEY, JSON.stringify({ revision: state.revision, changed: count, failed: 0,
+            at: diagnostics.lastSyncAt }));
+        setTimeout(() => location.reload(), 350);
+        return count;
+    } finally { setOperationState('manual-ready', false); }
+}
+
 async function manualPush() {
     return coordinated(manualPushLocked);
 }
@@ -720,23 +751,12 @@ async function manualPushLocked() {
         const remote = await request('/state');
         const remoteValues = serverStateToPortableValues(remote, filterOptions());
         const mutations = diffSnapshots(remoteValues, snapshot.values);
-        const chunks = [];
-        for (let index = 0; index < mutations.length; index += 500) {
-            chunks.push(mutations.slice(index, index + 500));
-        }
-        if (!chunks.length) chunks.push([]);
-
-        let state;
-        for (let index = 0; index < chunks.length; index += 1) {
-            state = await request('/merge', {
-                method: 'POST',
-                body: JSON.stringify({
-                    deviceId: getDeviceId(),
-                    seed: index === 0,
-                    mutations: chunks[index],
-                }),
-            });
-        }
+        if (mutations.length > 50000) throw new StorageError('tooManyMutations');
+        const state = await request('/commit', {
+            method: 'POST',
+            body: JSON.stringify({ operationId: randomId('operation'), expectedRevision: remote.revision,
+                deviceId: getDeviceId(), mutations }),
+        });
 
         diagnostics.revision = Math.max(0, Number(state?.revision) || diagnostics.revision);
         diagnostics.pushedMutations += mutations.length;
@@ -818,21 +838,25 @@ function bindPanel() {
         menu.hidden = !menu.hidden;
         settingsOpen = !menu.hidden;
         toggle.setAttribute('aria-expanded', String(settingsOpen));
-        if (!settingsOpen) automatic?.configure();
+        automatic?.configure();
     });
     const mode = document.querySelector('#dss_storage_mode');
     mode.value = localStorageMode();
     mode.addEventListener('change', async () => {
         const selected = mode.value;
         mode.disabled = true;
+        let canceled = false;
         try {
-            if (operationInFlight || automatic?.running || automatic?.state().intent) throw new StorageError('operationBusy');
-            if (selected === 'full' && !(await confirmManualAction(msg('fullStorageTitle'), msg('fullStorageConsent'), msg('fullStorageTitle')))) return;
-            if (selected === 'selected' && !(await confirmManualAction(msg('selectedStorageTitle'), msg('selectedStorageConsent'), msg('selectedStorageTitle')))) return;
-            localStorage.setItem(fullStorageKey(), selected);
-        if (selected === 'selected' && !selectedScopeKeyExists()) globalThis.toastr?.warning(msg('selectedScopeEmpty'));
+            await coordinated(async () => {
+                if (operationInFlight || automatic?.running || automatic?.state().intent) throw new StorageError('operationBusy');
+                if (selected === 'full' && !(await confirmManualAction(msg('fullStorageTitle'), msg('fullStorageConsent'), msg('fullStorageTitle')))) { canceled = true; return; }
+                if (selected === 'selected' && !(await confirmManualAction(msg('selectedStorageTitle'), msg('selectedStorageConsent'), msg('selectedStorageTitle')))) { canceled = true; return; }
+                localStorage.setItem(fullStorageKey(), selected);
+            });
+            if (canceled) return;
+            if (selected === 'selected' && !selectedScopeKeyExists()) globalThis.toastr?.warning(msg('selectedScopeEmpty'));
             refreshSnapshot();
-            if (automatic?.prefs().download) { automatic.entry = true; automatic.configure(); }
+            await automatic?.scopeChanged();
         } catch (error) { globalThis.toastr?.error(errorText(error)); }
         finally { mode.value = localStorageMode(); mode.disabled = false; }
     });
@@ -862,10 +886,15 @@ function bindPanel() {
         finally { idbEnabled.disabled = false; idbEnabled.checked = indexedDbConfig().enabled; }
     });
 
-    excludes.addEventListener('change', () => {
-        getSettings().additionalExcludes = excludes.value;
-        saveSettingsDebounced();
-        refreshSnapshot();
+    excludes.addEventListener('change', async () => {
+        try {
+            await coordinated(async () => {
+                getSettings().additionalExcludes = excludes.value;
+                saveSettingsDebounced();
+            });
+            refreshSnapshot();
+            await automatic?.scopeChanged();
+        } catch (error) { globalThis.toastr?.error(errorText(error)); }
     });
     document.querySelector('#dss_pull')?.addEventListener('click', async () => {
         if (await confirmManualPull()) manualPull().catch(() => {});
@@ -963,7 +992,7 @@ function renderAuto(state) {
                 const checked = input.checked;
                 input.disabled = true;
                 try {
-                    if (checked && !(await confirmManualAction(msg(key), msg('autoConsent'), msg(key)))) return;
+                    if (checked && !(await confirmManualAction(msg(key), msg(name === 'upload' ? 'autoUploadConsent' : 'autoDownloadConsent'), msg(key)))) return;
                     await automatic.setOption(name, checked);
                 } catch (error) { globalThis.toastr?.error(errorText(error)); }
                 finally { renderAuto(automatic.describe()); }
@@ -982,9 +1011,10 @@ function renderAuto(state) {
         input.disabled = !state.supported;
     }
     root.querySelector('#dss_auto_status').textContent = msg(state.status) + '\n' + msg('autoDetails', {
-        count: state.active, last: state.lastEnd ? new Date(state.lastEnd).toLocaleString() : '—',
+        count: state.pending, last: state.lastConfirmedAt ? new Date(state.lastConfirmedAt).toLocaleString() : '—',
         due: state.due ? new Date(state.due).toLocaleString() : '—',
-    }) + (state.error ? '\n' + errorText({ code: state.error, message: state.error }) : '');
+    }) + (state.error ? '\n' + errorText({ code: state.error, message: state.error }) : '')
+        + (state.errorDetail ? '\n' + state.errorDetail : '');
 }
 
 async function resolveAutoConflict(counts) {
@@ -1006,9 +1036,12 @@ async function resolveAutoConflict(counts) {
 async function initializeAutomatic() {
     if (automatic) return;
     try {
-        automatic = new AutoSync({
+        automatic = new IncrementalAutoSync({
             request: syncRequest, options: filterOptions, persistDevice: () => getDeviceId(),
-            busy: () => operationInFlight || managerOpen || settingsOpen,
+            headers: requestHeaders,
+            serverValues: (state, options) => serverStateToPortableValues(state, options),
+            applyAutomaticDownload: applyAutomaticSnapshot,
+            busy: () => operationInFlight,
             makeBackup, backup: sendBackup, conflict: resolveAutoConflict,
             events: { eventSource, eventTypes: event_types },
             render: renderAuto, changed: refreshSnapshot,

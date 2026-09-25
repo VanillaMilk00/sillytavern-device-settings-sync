@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.10.0 - 2026-09-25
+
+### 繁體中文
+
+- 自動上傳改為由 localStorage 原生變更通知觸發；同鍵連續變更合併，只讀取及傳送有變更的鍵，不再依賴模型請求後 15 分鐘倒數或定時掃描。
+- 新增瀏覽器私有 IndexedDB 佇列、原子增量提交、大型值差分與關頁後盡力續傳；只有伺服器確認才顯示保存完成。背景同步不保證所有瀏覽器都能完成，必要時會在原瀏覽器下次開啟後續傳。
+- 新增伺服器端最多五份 localStorage 版本；相同裝置與範圍 30 分鐘內合併，管理視窗可瀏覽、匯出及還原。
+- 新增增量同步能力。請更新伺服器插件至 1.10.0 並重啟 SillyTavern；舊版自動上傳會關閉，需重新確認才能啟用新行為。
+
+### 简体中文
+
+- 自动上传改由 localStorage 原生变更通知触发；同一键的连续变化会合并，只读取和发送有变化的键，不再依赖模型请求后 15 分钟倒计时或定时扫描。
+- 新增浏览器私有 IndexedDB 队列、原子增量提交、大型值差分和关页后尽力续传；只有服务器确认后才显示保存完成。后台同步不保证所有浏览器都能完成，必要时会在原浏览器下次打开后续传。
+- 新增服务器端最多五份 localStorage 版本；同一设备和范围在 30 分钟内合并，管理窗口可浏览、导出和还原。
+- 新增增量同步能力。请将服务器插件更新至 1.10.0 并重启 SillyTavern；旧版自动上传会关闭，需重新确认才能启用新行为。
+
+### English
+
+- Automatic uploads now react to native localStorage change notifications. Repeated edits to a key are coalesced, and only changed keys are read and sent; the former 15-minute model-idle timer and periodic scans are removed.
+- Add a private browser IndexedDB queue, atomic incremental commits, large-value deltas and best-effort continuation after closing a page. A save is reported only after server confirmation. Background Sync is not guaranteed in every browser; the original browser may need to be reopened to resume.
+- Add up to five server-side localStorage versions, grouped for 30 minutes by device and scope, with browse, export and restore controls.
+- Add the incremental-sync server capability. Update the server plugin to 1.10.0 and restart SillyTavern. Existing automatic-upload consent is disarmed and must be confirmed again for the new behavior.
+
 ## 1.9.0 - 2026-09-25
 
 ### 繁體中文

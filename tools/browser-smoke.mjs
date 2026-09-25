@@ -71,7 +71,7 @@ try {
     requests.length = 0;
     await page.evaluate(() => DeviceSettingsSync.pushCurrentDevice());
     assert.equal(requests[0], 'POST ' + base + '/backups');
-    assert.ok(requests.includes('POST ' + base + '/merge'));
+    assert.ok(requests.includes('POST ' + base + '/commit'));
     async function api(suffix, body) {
         return page.evaluate(async ({ endpoint, body }) => {
             const { getRequestHeaders } = await import('/script.js');
@@ -101,12 +101,12 @@ try {
     assert.deepEqual((await api('/backups')).body, records);
     pass('HTTP retry deduplication, conflict, concurrent creation and five-slot eviction');
 
-    await page.route('**' + base + '/merge', route => route.fulfill({ status: 503, json: { error: 'Simulated sync failure' } }));
+    await page.route('**' + base + '/commit', route => route.fulfill({ status: 503, json: { error: 'Simulated sync failure' } }));
     assert.equal(await page.evaluate(async () => { try { await DeviceSettingsSync.pushCurrentDevice(); return false; } catch { return true; } }), true);
     const afterFailure = (await api('/backups')).body;
     assert.notEqual(afterFailure[0].id, records[0].id);
     assert.equal(afterFailure[0].reason, 'upload');
-    await page.unroute('**' + base + '/merge');
+    await page.unroute('**' + base + '/commit');
     pass('a downstream sync failure retains its successfully saved rescue backup');
     let lostResponse = false;
     await page.route('**' + base + '/backups', async route => {
@@ -255,7 +255,7 @@ try {
     assert.deepEqual(requests, ['POST ' + base + '/backups']);
     pass('delete cancellation is safe; optional backup precedes confirmed exact-key deletion');
 
-    await manager.getByRole('button', { name: 'Backups', exact: true }).click();
+    await manager.locator('button[data-tab="backups"]').click();
     await manager.locator('.dss_backup_card').last().waitFor();
     assert.equal(await manager.locator('.dss_backup_card').count(), 5);
     await manager.locator('.dss_backup_card').last().getByRole('button', { name: 'Restore', exact: true }).click();
@@ -271,7 +271,7 @@ try {
         localStorage.setItem('tt:cache', 'review-platform');
     });
     const beforeCleanup = await page.evaluate(() => JSON.stringify(Object.entries(localStorage).sort()));
-    await manager.getByRole('button', { name: 'Cleanup suggestions', exact: true }).click();
+    await manager.locator('button[data-tab="cleanup"]').click();
     assert.match(await manager.innerText(), /manual review required/u);
     assert.equal(await page.evaluate(() => JSON.stringify(Object.entries(localStorage).sort())), beforeCleanup);
     assert.equal(await manager.locator('input[aria-label="qa:api_token_cache"]').isDisabled(), true);
@@ -334,7 +334,7 @@ try {
     assert.match(await manager.locator('.dss_capacity_panel').innerText(), /Measured ceiling estimate \(UTF-16\)/u);
     assert.equal(await page.evaluate(() => JSON.stringify(Object.entries(localStorage).sort())), beforeProbe);
     pass('optional capacity probe requires confirmation, brackets real quota and leaves storage unchanged');
-    await manager.getByRole('button', { name: 'Local data', exact: true }).click();
+    await manager.locator('button[data-tab="local"]').click();
     await manager.getByRole('searchbox').fill('qa:');
     await manager.getByRole('button', { name: 'Select visible', exact: true }).click();
     assert.equal(await manager.locator('.dss_map_box[aria-pressed="true"]').count(), 1);

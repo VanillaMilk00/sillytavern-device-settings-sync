@@ -252,7 +252,7 @@ class StorageTree {
 
 export async function openStorageManager(api, { initialTab = 'local' } = {}) {
     let disposed = false;
-    let activeTab = ['local', 'backups', 'cleanup', 'indexeddb', 'indexedDbBackups'].includes(initialTab) ? initialTab : 'local';
+    let activeTab = ['local', 'backups', 'serverVersions', 'cleanup', 'indexeddb', 'indexedDbBackups'].includes(initialTab) ? initialTab : 'local';
     let currentTree;
     let viewGeneration = 0;
     let pending = false;
@@ -496,6 +496,55 @@ export async function openStorageManager(api, { initialTab = 'local' } = {}) {
         if (tab === 'cleanup') return renderCleanup();
         if (tab === 'indexeddb') return renderIndexedDbManager({ api, content, status, guard, refresh: showTab });
         if (tab === 'indexeddbBackups') return renderIndexedDbBackups({ api, content, status, guard, refresh: showTab });
+        if (tab === 'serverVersions') {
+            content.append(element('p', msg('serverVersionsHelp')), element('p', msg('credentialsNote'), 'dss_note'));
+            const options = api.filterOptions();
+            const mode = options.fullStorage ? 'full' : options.selectedScope ? 'selected' : 'portable';
+            const records = await api.listServerVersions(mode);
+            if (disposed || generation !== viewGeneration) return;
+            if (!records.length) content.append(element('p', msg('serverVersionsEmpty')));
+            for (let index = 0; index < 5; index++) {
+                const record = records[index];
+                const card = element('section', undefined, 'dss_backup_card');
+                card.append(element('h4', msg('slot', { number: index + 1 })));
+                if (!record) card.append(element('p', msg('backupEmpty')));
+                else {
+                    card.append(element('p', msg('serverVersionMeta', {
+                        date: new Date(record.createdAt).toLocaleString(),
+                        device: record.source?.deviceId?.slice(-8) || msg('unknownDevice'),
+                        mode: msg(record.mode === 'full' ? 'modeFull' : record.mode === 'selected' ? 'modeSelected' : 'modePortable'),
+                        count: record.keys,
+                        revision: record.revision,
+                    })));
+                    const actions = element('div', undefined, 'dss_toolbar');
+                    const readVersion = () => api.getServerVersion(record.id, mode);
+                    actions.append(
+                        button(msg('browse'), () => guard(async () => {
+                            const archive = await readVersion();
+                            const tree = new StorageTree(new Map(archive.entries.map(item => [item.key, item.value])), api.filterOptions());
+                            const view = element('div', undefined, 'dss_manager');
+                            view.append(button(msg('exportAll'), () => download(archive)), tree.node);
+                            await largePopup(view, POPUP_TYPE.TEXT, { okButton: msg('close') });
+                        })),
+                        button(msg('export'), () => guard(async () => download(await readVersion()))),
+                        button(msg('restoreToServer'), () => guard(async () => {
+                            const archive = await readVersion();
+                            const accepted = await new Popup(msg('serverVersionRestoreConfirm', { count: archive.entries.length,
+                                date: new Date(record.createdAt).toLocaleString() }), POPUP_TYPE.CONFIRM, '', {
+                                okButton: msg('restoreToServer'), cancelButton: msg('cancel'), allowVerticalScrolling: true,
+                            }).show();
+                            if (accepted !== POPUP_RESULT.AFFIRMATIVE) return;
+                            await api.restoreServerVersion(record.id, mode);
+                            status.classList.remove('dss_error');
+                            status.textContent = msg('serverVersionRestoreSuccess');
+                            await showTab('serverVersions');
+                        })));
+                    card.append(actions);
+                }
+                content.append(card);
+            }
+            return;
+        }
         content.append(element('p', msg('backupHelp')), element('p', msg('credentialsNote'), 'dss_note'));
         const records = await api.listBackups();
         if (disposed || generation !== viewGeneration) return;
@@ -536,7 +585,7 @@ export async function openStorageManager(api, { initialTab = 'local' } = {}) {
             content.append(card);
         }
     }
-    for (const tab of ['local', 'backups', 'cleanup', 'indexeddb', 'indexeddbBackups']) {
+    for (const tab of ['local', 'backups', 'serverVersions', 'cleanup', 'indexeddb', 'indexeddbBackups']) {
         const labelKey = tab === 'indexeddbBackups' ? 'indexedDbBackups' : tab;
         const node = button(msg(labelKey), () => guard(() => showTab(tab)));
         node.dataset.tab = tab;

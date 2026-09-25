@@ -19,8 +19,8 @@ const {
 import { createInitialState, MAX_STATE_BYTES, mergeMutations, normalizeState, touchSettings } from './state.js';
 import { BackupStore } from './backups.js';
 import { commitMutations, findCommit } from './commit.js';
-import { FullStateStore, fullReceipt } from './full-state.js';
 import { IndexedDbTransferStore } from './indexeddb.js';
+import { IncrementalStateStore } from './incremental.js';
 import { StorageError } from '../lib/storage-model.js';
 
 const FILE_NAME = 'device-settings-sync.json';
@@ -42,29 +42,29 @@ function getUserRoot(request) {
     return root;
 }
 
+function assertAccount(request, account) {
+    const handle = request?.user?.profile?.handle || request?.session?.handle;
+    if (typeof handle !== 'string' || typeof account !== 'string' || account !== handle) {
+        throw new StorageError('incrementalAccountMismatch');
+    }
+}
+
+function streamForMode(mode = 'portable') {
+    if (mode === 'portable') return 'portable';
+    if (mode === 'selected' || mode === 'full') return 'full';
+    throw new StorageError('incrementalInvalidRequest');
+}
+
 function statePath(root) {
     return path.join(root, FILE_NAME);
 }
 
 async function readState(root) {
-    try {
-        const text = await fs.readFile(statePath(root), 'utf8');
-        if (Buffer.byteLength(text, 'utf8') > MAX_STATE_BYTES) throw new Error('Settings sync state is too large');
-        return normalizeState(JSON.parse(text));
-    } catch (error) {
-        if (error?.code === 'ENOENT') return createInitialState();
-        throw error;
-    }
+    return new IncrementalStateStore(root).read();
 }
 
 async function writeState(root, state) {
-    const target = statePath(root);
-    const temporary = path.join(root, `.${FILE_NAME}.${process.pid}.${Date.now()}.tmp`);
-    const payload = `${JSON.stringify(state, null, 2)}\n`;
-    if (Buffer.byteLength(payload, 'utf8') > MAX_STATE_BYTES) throw new RangeError('Settings sync state is too large');
-    await fs.writeFile(temporary, payload, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    await fs.rename(temporary, target);
-    await fs.chmod(target, 0o600).catch(() => {});
+    await new IncrementalStateStore(root).writeLegacyState(state);
 }
 
 function serialize(root, operation) {
@@ -121,6 +121,8 @@ function installSillyTavernSecurity(router) {
     }
     router.use('/backups', express.json({ limit: '32mb' }));
     router.use('/full-commit', express.json({ limit: '32mb' }));
+    router.use('/incremental/commit', express.json({ limit: '32mb' }));
+    router.use('/incremental/transfers', express.json({ limit: '512kb' }));
     router.use('/indexeddb/transfers', express.json({ limit: '2mb' }));
     router.use(express.json({ limit: '6mb' }));
 }
@@ -128,17 +130,108 @@ function installSillyTavernSecurity(router) {
 export async function init(router) {
     installSillyTavernSecurity(router);
 
+    router.get('/incremental/state', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            response.set('Cache-Control', 'no-store').json(await serialize(root, () => new IncrementalStateStore(root, streamForMode(request.query.mode || 'portable')).metadata()));
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.get('/incremental/snapshot', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            response.set('Cache-Control', 'no-store').json(await serialize(root, () => new IncrementalStateStore(root, streamForMode(request.query.mode || 'portable')).snapshot()));
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.get('/incremental/commits/:id', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            const result = await serialize(root, async () => {
+                const manifest = await new IncrementalStateStore(root, streamForMode(request.query.mode || 'portable')).readManifest();
+                return manifest.receipts.find(item => item.operationId === request.params.id) || null;
+            });
+            if (!result) return response.status(404).json({ code: 'commitNotFound' });
+            response.set('Cache-Control', 'no-store').json(result);
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.post('/incremental/commit', async (request, response) => {
+        try {
+            assertAccount(request, request.body?.account);
+            const root = getUserRoot(request);
+            const result = await serialize(root, () => new IncrementalStateStore(root, streamForMode(request.body?.mode || 'portable')).commit(request.body, {
+                automatic: request.body?.automatic !== false,
+            }));
+            response.set('Cache-Control', 'no-store').json(result);
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.get('/incremental/versions', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            response.set('Cache-Control', 'no-store').json(await serialize(root, () => new IncrementalStateStore(root, streamForMode(request.query.mode || 'portable')).listVersions()));
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.get('/incremental/versions/:id', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            response.set('Cache-Control', 'no-store').json(await serialize(root, () => new IncrementalStateStore(root, streamForMode(request.query.mode || 'portable')).getVersion(request.params.id)));
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.post('/incremental/versions/:id/restore', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            response.set('Cache-Control', 'no-store').json(await serialize(root, () => new IncrementalStateStore(root, streamForMode(request.body?.mode || 'portable')).restoreVersion(
+                request.params.id, request.body?.expectedRevision, request.body?.deviceId)));
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.post('/incremental/transfers/start', async (request, response) => {
+        try {
+            assertAccount(request, request.body?.account);
+            const root = getUserRoot(request);
+            response.set('Cache-Control', 'no-store').json(await new IncrementalStateStore(root, streamForMode(request.body?.mode || 'portable')).startTransfer(request.body));
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.put('/incremental/transfers/:id/chunks/:index', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            response.set('Cache-Control', 'no-store').json(await new IncrementalStateStore(root, streamForMode(request.query.mode || 'portable'))
+                .putTransferChunk(request.params.id, Number(request.params.index), request.body));
+        } catch (error) { sendError(response, error); }
+    });
+
+    router.post('/incremental/transfers/:id/finish', async (request, response) => {
+        try {
+            assertAccount(request, request.body?.account);
+            const root = getUserRoot(request);
+            response.set('Cache-Control', 'no-store').json(await serialize(root, () => new IncrementalStateStore(root, streamForMode(request.query.mode || 'portable'))
+                .finishTransfer(request.params.id, request.body.account)));
+        } catch (error) { sendError(response, error); }
+    });
+
     router.get('/full-state', async (request, response) => {
         try {
-            const state = await serialize(getUserRoot(request), () => new FullStateStore(getUserRoot(request)).read());
-            response.set('Cache-Control', 'no-store').json({ ...state, receipts: undefined });
+            const root = getUserRoot(request);
+            const state = await serialize(root, () => new IncrementalStateStore(root, 'full').read());
+            const entries = Object.create(null);
+            for (const [key, entry] of Object.entries(state.entries)) if (!entry.deleted) entries[key] = entry.value;
+            response.set('Cache-Control', 'no-store').json({ schema: 1, revision: state.revision, seeded: state.seeded,
+                updatedAt: state.updatedAt, entries });
         } catch (error) { sendError(response, error); }
     });
 
     router.get('/full-commits/:id', async (request, response) => {
         try {
             const root = getUserRoot(request);
-            const receipt = await serialize(root, async () => fullReceipt(await new FullStateStore(root).read(), request.params.id));
+            const receipt = await serialize(root, async () => {
+                const state = await new IncrementalStateStore(root, 'full').read();
+                return state.autoCommits.find(item => item.operationId === request.params.id) || null;
+            });
             if (!receipt) return response.status(404).json({ code: 'commitNotFound' });
             response.set('Cache-Control', 'no-store').json(receipt);
         } catch (error) { sendError(response, error); }
@@ -147,7 +240,7 @@ export async function init(router) {
     router.post('/full-commit', async (request, response) => {
         try {
             const root = getUserRoot(request);
-            const receipt = await serialize(root, () => new FullStateStore(root).commit(request.body));
+            const receipt = await serialize(root, () => new IncrementalStateStore(root, 'full').commitFullSnapshot(request.body));
             response.set('Cache-Control', 'no-store').json(receipt);
         } catch (error) {
             if (['autoConflict', 'commitConflict'].includes(error.code)) return response.status(409).json({ code: error.code });
@@ -181,7 +274,7 @@ export async function init(router) {
     });
 
     router.get('/health', (_request, response) => {
-        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.9.0', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1', 'indexeddb-scoped-download-v1'] });
+        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.10.0', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1', 'indexeddb-scoped-download-v1', 'incremental-localstorage-v1'] });
     });
 
     router.post('/indexeddb/transfers/start', async (request, response) => {

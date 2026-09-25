@@ -39,11 +39,28 @@ try {
             : await request.get(host.origin + base + route);
         return { status: response.status(), body: await response.json() };
     }
+    async function waitForRemoteValue(key, value) {
+        const deadline = Date.now() + 20000;
+        let latest;
+        while (Date.now() < deadline) {
+            latest = await api('/state');
+            if (latest.status === 200 && latest.body.entries?.[key]?.value === value) return latest.body;
+            await page.waitForTimeout(200);
+        }
+        throw new Error(`Server did not confirm ${key}; last value was ${JSON.stringify(latest?.body?.entries?.[key] ?? null)}`);
+    }
     const page = await context.newPage();
     const errors = [];
     const traffic = [];
+    const incrementalCommits = [];
     page.on('pageerror', error => errors.push(error.message));
-    context.on('request', req => { if (req.url().includes(base)) traffic.push(req.method() + ' ' + new URL(req.url()).pathname); });
+    context.on('request', req => {
+        if (req.url().includes(base)) {
+            const route = req.method() + ' ' + new URL(req.url()).pathname;
+            traffic.push(route);
+            if (route === 'POST ' + base + '/incremental/commit') incrementalCommits.push(req.postData());
+        }
+    });
     async function ready(target) {
         await target.goto(host.href);
         await target.waitForFunction(() => Boolean(globalThis.DeviceSettingsSync));
@@ -58,14 +75,6 @@ try {
         await input.evaluate(node => node.click());
         if (enabled) await page.locator('dialog[open]').last().locator(confirm ? '.popup-button-ok' : '.popup-button-cancel').click();
         await page.waitForFunction(() => ![...document.querySelectorAll('#dss_auto input')].some(node => node.disabled));
-    }
-    async function idle(target = page) {
-        await target.evaluate(() => {
-            globalThis.qaRealDateNow ||= Date.now;
-            globalThis.qaOffset = (globalThis.qaOffset || 0) + 900010;
-            Date.now = () => globalThis.qaRealDateNow() + globalThis.qaOffset;
-            document.dispatchEvent(new Event('visibilitychange'));
-        });
     }
     await ready(page);
     assert.deepEqual(traffic, []);
@@ -89,7 +98,10 @@ try {
     }, modelUrl);
     await page.waitForFunction(() => globalThis.qaHeaders);
     assert.equal(await page.evaluate(() => globalThis.qaHeaders.native), true);
-    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active > 0);
+    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active > 0, null, { timeout: 10000 }).catch(async error => {
+        console.error('Automatic request monitor diagnostics:', await page.evaluate(() => DeviceSettingsSync.getDiagnostics().automatic));
+        throw error;
+    });
     assert.equal(await page.evaluate(() => globalThis.qaBody), undefined);
     await page.evaluate(() => globalThis.qaFetch);
     await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active === 0);
@@ -132,32 +144,49 @@ try {
     await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active === 0);
     pass('native generation cancellation and duplicate end events do not leave phantom activity');
 
-    await page.evaluate(() => localStorage.setItem('auto:theme', 'idle-upload'));
-    await idle();
-    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.status === 'autoReady');
-    assert.equal((await api('/state')).body.entries['auto:theme'].value, 'idle-upload');
-    assert.equal(traffic.filter(value => value === 'POST ' + base + '/commit').length, 1);
-    assert.equal(traffic.filter(value => value === 'POST ' + base + '/backups').length, 1);
-    assert.equal(await page.evaluate(() => location.pathname), '/');
-    pass('15-minute idle upload creates one backup and one atomic commit with download off');
+    const autoCommitRoute = 'POST ' + base + '/incremental/commit';
+    const commitsBeforeUpload = traffic.filter(value => value === autoCommitRoute).length;
+    const changedAt = Date.now();
+    await page.evaluate(() => localStorage.setItem('auto:theme', 'event-upload'));
+    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.status === 'autoConfirmed', null, { timeout: 15000 }).catch(async error => {
+        console.error('Automatic save diagnostics:', await page.evaluate(() => ({ automatic: DeviceSettingsSync.getDiagnostics().automatic,
+            value: localStorage.getItem('auto:theme') })));
+        throw error;
+    });
+    const elapsed = Date.now() - changedAt;
+    assert.ok(elapsed >= 1800 && elapsed < 15000, 'automatic save should follow the short coalescing window, not a 15-minute timer');
+    assert.equal((await api('/state')).body.entries['auto:theme'].value, 'event-upload');
+    assert.equal(traffic.filter(value => value === autoCommitRoute).length, commitsBeforeUpload + 1,
+        'expected one incremental request: ' + JSON.stringify(incrementalCommits));
+    assert.equal(traffic.filter(value => value === 'POST ' + base + '/backups').length, 0);
+    const serverVersions = (await api('/incremental/versions?mode=portable')).body;
+    assert.ok(serverVersions.length > 0 && serverVersions.length <= 5, 'server keeps at most five incremental versions');
+    pass('native localStorage change is coalesced and confirmed by one incremental save without a local rescue upload');
+
+    await page.evaluate(() => { localStorage['auto:theme-direct'] = 'property-upload'; });
+    await waitForRemoteValue('auto:theme-direct', 'property-upload');
+    assert.equal((await api('/state')).body.entries['auto:theme-direct'].value, 'property-upload');
+    await page.evaluate(() => localStorage.removeItem('auto:theme-direct'));
+    await page.waitForFunction(async () => {
+        const response = await fetch('/api/plugins/device-settings-sync/state', { cache: 'no-store' });
+        const state = await response.json();
+        return state.entries['auto:theme-direct']?.deleted === true;
+    }, null, { timeout: 20000 });
+    pass('direct property assignment and removal produce exact key updates and a server tombstone');
 
     const other = await context.newPage(); await ready(other);
     await other.evaluate(() => { globalThis.qaActive = DeviceSettingsSync.beginModelActivity(); });
-    await page.evaluate(() => { const id = DeviceSettingsSync.beginModelActivity(); DeviceSettingsSync.endModelActivity(id); localStorage.setItem('auto:theme', 'two-tabs'); });
-    await idle(page);
-    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active > 0);
-    const commitsBefore = traffic.filter(value => value === 'POST ' + base + '/commit').length;
+    await other.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active > 0);
+    const commitsBefore = traffic.filter(value => value === autoCommitRoute).length;
+    await page.evaluate(() => localStorage.setItem('auto:theme', 'two-tabs'));
+    await page.waitForTimeout(2500);
+    assert.equal(traffic.filter(value => value === autoCommitRoute).length, commitsBefore, 'an active generation must hold the shared sync lock');
     await other.evaluate(() => DeviceSettingsSync.endModelActivity(globalThis.qaActive));
-    // Use one shared wall clock for both tabs before ending the next cycle.
-    const offset = await page.evaluate(() => globalThis.qaOffset);
-    await other.evaluate(offset => { globalThis.qaRealDateNow ||= Date.now; Date.now = () => globalThis.qaRealDateNow() + offset; }, offset);
-    await page.evaluate(() => { const id = DeviceSettingsSync.beginModelActivity(); DeviceSettingsSync.endModelActivity(id); });
-    await idle(page);
-    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.status === 'autoReady');
+    await waitForRemoteValue('auto:theme', 'two-tabs');
     assert.equal((await api('/state')).body.entries['auto:theme'].value, 'two-tabs');
-    assert.equal(traffic.filter(value => value === 'POST ' + base + '/commit').length, commitsBefore + 1);
+    assert.equal(traffic.filter(value => value === autoCommitRoute).length, commitsBefore + 1);
     await other.close();
-    pass('another active tab blocks upload and the shared cycle commits only once');
+    pass('an active generation in another tab blocks the changed-key batch, then one commit completes');
 
     await toggle('upload', false); await toggle('download', true);
     await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.status === 'autoReady');
@@ -210,7 +239,11 @@ try {
         pass(language + ' automatic controls and status use the translated catalog');
     }
     await toggle('download', false);
-    await page.locator('#dss_full_storage').evaluate(node => node.click());
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    if (!(await page.locator('#device_settings_sync_panel').isVisible())) await page.locator('#extensions-settings-button .drawer-toggle').evaluate(node => node.click());
+    if (!(await page.locator('#dss_settings_toggle').isVisible())) await page.locator('#device_settings_sync_panel .inline-drawer-toggle').evaluate(node => node.click());
+    if (!(await page.locator('#dss_storage_mode').isVisible())) await page.locator('#dss_settings_toggle').evaluate(node => node.click());
+    await page.locator('#dss_storage_mode').selectOption('full');
     await page.locator('dialog[open] .popup-button-ok').last().click();
     await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().fullStorage === true);
     await page.evaluate(() => {

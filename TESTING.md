@@ -7,6 +7,10 @@ npm test
 npm run check
 ```
 
+v1.10.0 has **119 passing Node unit/behavior tests**, a passing syntax check, and isolated Edge Chromium integration coverage on SillyTavern 1.14.0 with Node.js 22: **30 management checks and 14 automatic-mode checks passed**. New tests cover isolated native-storage notifications, dirty-key-only reads, 1,000 repeated writes coalescing to one key, event batching, Unicode/large-value deltas, idempotent incremental commits, chunk validation, server-version retention and protection of remote changes while upload-only is enabled. Background Sync registration is non-blocking. Firefox, WebKit and physical mobile devices were not tested; mobile coverage uses a browser viewport.
+
+v1.10.0 目前有 **119 項 Node.js 單元／行為測試全數通過**、語法檢查通過，並已在 SillyTavern 1.14.0、Node.js 22 的隔離環境完成 Edge Chromium 驗收：管理介面 **30 項**、自動模式 **14 項**全數通過。新增案例涵蓋隔離頁框的原生儲存通知、只讀取待處理鍵、同鍵 1,000 次變更合併、事件合併、Unicode／大型值差分、增量提交重試去重、分塊驗證、伺服器版本保留、「只上傳」時保護遠端變更，以及背景工作者不可用時不阻塞前景保存。Firefox、WebKit 與實體手機尚未驗證；手機排版僅以瀏覽器視窗尺寸測試。
+
 保留原有 20 項測試，加入備份與資料操作案例。測試以暫存資料夾或記憶體 Storage 執行，不操作日常帳戶。CI 執行 Node.js 18、20、24。
 
 1.6.0 保留既有 60 項測試，共 89 項單元／行為測試。涵蓋四種開關組合、閒置倒數、無變更略過、衝突、備份失敗、版本競爭、提交回應遺失、有限重試、舊後端、關閉／休眠分頁、首次多分頁識別、重新啟用、防刷新循環、延後重新載入與配額復原。既有管理介面有 30 項瀏覽器檢查，另加 12 項自動模式及 7 項伺服器安全檢查。
@@ -60,9 +64,9 @@ Browser checks cover idle loading, cancellation, backup failure, snapshot conten
 
 Additional browser checks cover protected categories and suffixes, batch-cleanup cancellation/failure/stale preview/success and required backup contents, plus cancelled and completed quota probes with exact storage preservation. Capacity probing intentionally fills disposable browser storage temporarily. Mobile coverage uses viewport sizes, not physical Android/iOS devices.
 
-自動模式腳本另啟動 loopback 模型測試端點，驗證串流標頭與結束的區別、XHR 失敗、同源 iframe、原生生成／取消事件、15 分鐘排程（只前進測試頁面的時鐘）、多分頁共享活動、下載專用防循環與衝突選擇。使用假模型傳輸和原生事件，不消耗付費 API，也不宣稱實際供應商或所有擴充均已驗證。
+自動模式瀏覽器腳本另啟動 loopback 模型測試端點，驗證串流標頭與結束的區別、XHR 失敗、同源 iframe、原生生成／取消事件、原生 localStorage 通知後的短延遲增量保存、跨分頁活動鎖、獨立下載及衝突選擇。使用假模型傳輸，不消耗付費 API，也不代表已驗證實際供應商或所有擴充。此腳本要求全新隔離的 SillyTavern 主機；若該主機不存在，不要改用正式站台。
 
-The automatic suite starts a loopback model fixture, checks stream headers versus completion, failed XHR, same-origin frames, native generation/cancellation events, the idle scheduler (advancing only the test page clock), multi-tab activity, download-only reload protection and conflict choices. No paid model APIs are called; this does not claim end-to-end verification of every provider or extension.
+The automatic browser script starts a loopback model fixture and checks stream headers versus completion, failed XHR, same-origin frames, native generation/cancellation events, short-delay incremental saves after native localStorage notifications, cross-tab request locks, independent download and conflict choices. It uses no paid model API and does not establish compatibility with every provider or extension. Run it only against a fresh disposable SillyTavern host; never substitute a production site.
 
 ## 登入與 CSRF / Authentication and CSRF
 
