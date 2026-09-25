@@ -1,6 +1,6 @@
 {
   "name": "sillytavern-device-settings-sync-server",
-  "version": "1.10.0",
+  "version": "1.10.2",
   "private": true,
   "type": "module",
   "main": "index.js",

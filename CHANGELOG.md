@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.10.2 - 2026-09-26
+
+### 繁體中文
+
+- 修正完整 localStorage 同步拒絕空字串鍵的問題；完整及明確選取範圍可同步空鍵，一般可攜式模式仍會略過。
+- 伺服器插件版本更新至 1.10.2，需更新伺服器插件並重啟 SillyTavern。
+
+### 简体中文
+
+- 修复完整 localStorage 同步拒绝空字符串键的问题；完整及明确选择的范围可同步空键，普通可移植模式仍会跳过。
+- 服务器插件版本更新至 1.10.2，需更新服务器插件并重启 SillyTavern。
+
+### English
+
+- Fix full localStorage sync rejecting the empty-string key. Full and explicitly selected scopes now support it; portable mode continues to skip it.
+- Bump the server plugin to 1.10.2. Update the server plugin and restart SillyTavern.
+
 ## 1.10.1 - 2026-09-26
 
 ### 繁體中文

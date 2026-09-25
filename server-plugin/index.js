@@ -274,7 +274,7 @@ export async function init(router) {
     });
 
     router.get('/health', (_request, response) => {
-        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.10.0', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1', 'indexeddb-scoped-download-v1', 'incremental-localstorage-v1'] });
+        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.10.2', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1', 'indexeddb-scoped-download-v1', 'incremental-localstorage-v1'] });
     });
 
     router.post('/indexeddb/transfers/start', async (request, response) => {

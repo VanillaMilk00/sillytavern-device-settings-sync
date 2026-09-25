@@ -64,15 +64,15 @@ function validScope(scope) {
 }
 
 function allowed(key, value, scope) {
-    if (isInternalKey(key) || key.length > 512 || !key) return false;
+    if (isInternalKey(key) || key.length > 512) return false;
     if (scope.mode === 'full') return true;
     if (scope.mode === 'selected') return inScope(key, scope.selectedScope);
-    return isPortableStorageEntry(key, value ?? '', { maxValueBytes: scope.maxValueBytes })
+    return key.length > 0 && isPortableStorageEntry(key, value ?? '', { maxValueBytes: scope.maxValueBytes })
         && !matchesAdditionalExclude(key, scope.additionalExcludes);
 }
 
 function validateMutation(raw, current, scope) {
-    if (!raw || typeof raw !== 'object' || typeof raw.key !== 'string' || !raw.key || raw.key.length > 512) {
+    if (!raw || typeof raw !== 'object' || typeof raw.key !== 'string' || raw.key.length > 512) {
         throw new StorageError('incrementalInvalidRequest');
     }
     const key = raw.key;

@@ -4,7 +4,7 @@
 
 让同一个 SillyTavern 账户在手机、桌面及其他设备之间手动同步设置，并可选择自动同步可移植浏览器设置。
 
-当前版本：**1.10.1**。IndexedDB 只会把明确选中的项目纳入手动同步，不会随 localStorage 自动同步。增量 localStorage 自动保存需要 1.10.0 服务器插件；如果尚未安装过该版服务器插件，更新后需重启 SillyTavern。更新前端扩展后刷新浏览器即可。
+当前版本：**1.10.2**。IndexedDB 只会把明确选中的项目纳入手动同步，不会随 localStorage 自动同步。增量自动保存至少需要 1.10.0 服务器插件；1.10.2 修复了完整模式下空字符串键的同步问题。如果使用完整 localStorage 模式，请将服务器插件更新至 1.10.2 并重启 SillyTavern。更新前端扩展后刷新浏览器即可。
 
 ## 功能
 
@@ -75,7 +75,7 @@ try {
 
 ## 安装与升级
 
-需要 SillyTavern 1.14.0+、Node.js 18+，并启用 Server Plugins。v1.10.1 的 120 项单元／行为测试和语法检查已通过；另在隔离的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 环境通过 30 项管理界面和 14 项自动模式浏览器检查，涵盖桌面／手机尺寸及三语界面。测试也确认同一键快速连续变更会合并、自动下载不会在每次模型请求后重扫存储空间，且背景工作者不可用时不会阻塞前景保存。Firefox、WebKit 和实体手机尚未验证；旧版同步功能也曾在 SillyTavern 1.18.0 测试。这些结果不代表所有模型扩展、浏览器和实体手机均已验证。CI 覆盖 Node.js 18、20、24。
+需要 SillyTavern 1.14.0+、Node.js 18+，并启用 Server Plugins。v1.10.2 的 120 项单元／行为测试和语法检查已通过；另在隔离的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 环境通过 30 项管理界面和 14 项自动模式浏览器检查，涵盖桌面／手机尺寸及三语界面。服务器安全测试也涵盖增量同步及完整 localStorage 特殊键。测试也确认同一键快速连续变更会合并、自动下载不会在每次模型请求后重扫存储空间，且背景工作者不可用时不会阻塞前景保存。Firefox、WebKit 和实体手机尚未验证；旧版同步功能也曾在 SillyTavern 1.18.0 测试。这些结果不代表所有模型扩展、浏览器和实体手机均已验证。CI 覆盖 Node.js 18、20、24。
 
 1. 在「扩展 → 安装扩展」中输入：
 
@@ -184,7 +184,7 @@ JSON 文件／备份请求限制 **32 MiB**，超限拒绝且不修改原数据�
 - `GET /backups`：最多五份摘要，不包含设置值。
 - `POST /backups`：`{ operationId, reason, archive }`，原因为 `upload`、`download`、`import`、`restore`、`delete`。
 - `GET /backups/:id`：仅访问当前账户保留中的指定快照。
-- `GET /health`：能力标记新增 `incremental-localstorage-v1`。启用 v1.10.1 自动上传需要 1.10.0 服务器插件；如果尚未安装／更新服务器插件，更新后需重启 SillyTavern。旧版服务器仍可手动同步，但不支持新版自动上传。
+- `GET /health`：能力标记新增 `incremental-localstorage-v1`。增量自动上传需要 1.10.0 以上服务器插件；完整模式下空字符串键的支持需要 1.10.2。更新服务器插件后需重启 SillyTavern。旧版服务器仍可手动同步，但不支持增量自动上传。
 - `GET /incremental/state`、`GET /incremental/snapshot`：读取版本／键哈希或当前快照。`POST /incremental/commit`：带预期版本、操作标识及仅变更键的原子提交；冲突返回 HTTP 409，同一提交可安全重试。
 - `POST /incremental/transfers/start`、`PUT /incremental/transfers/:id/chunks/:index`、`POST /incremental/transfers/:id/finish`：对大型差异分块暂存；全部收齐并通过完整性核验后才会发布，未完成传输 24 小时后清理。
 - `GET /incremental/versions`、`GET /incremental/versions/:id`、`POST /incremental/versions/:id/restore`：列出、读取或确认后还原最多五份服务器版本，与本机救援备份分开保存。

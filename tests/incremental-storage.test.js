@@ -28,7 +28,11 @@ test('large-value splice deltas preserve Unicode and are used only when material
 test('atomic incremental commit preserves special keys and operation retries are idempotent', async () => {
     await withStore('full', async (_root, store) => {
         const raw = '繁體中文 🧋\\u0000';
-        const first = identity('operation_0001', 0, [{ key: '__proto__', beforeHash: null, afterHash: incrementalHash(raw), value: raw }]);
+        const emptyKeyValue = 'empty-key value';
+        const first = identity('operation_0001', 0, [
+            { key: '__proto__', beforeHash: null, afterHash: incrementalHash(raw), value: raw },
+            { key: '', beforeHash: null, afterHash: incrementalHash(emptyKeyValue), value: emptyKeyValue },
+        ]);
         const receipt = await store.commit(first);
         assert.equal(receipt.revision, 1);
         assert.deepEqual(await store.commit(first), { ...receipt, replayed: true });
@@ -36,8 +40,25 @@ test('atomic incremental commit preserves special keys and operation retries are
         assert.equal(Object.getPrototypeOf(snapshot.entries), null);
         assert.equal(snapshot.entries.__proto__.value, raw);
         assert.equal(snapshot.entries.__proto__.deleted, false);
+        assert.equal(snapshot.entries[''].value, emptyKeyValue);
         await assert.rejects(store.commit({ ...first, mutations: [{ ...first.mutations[0], value: 'different' }] }),
             error => error.code === 'incrementalCommitConflict');
+        await store.commit(identity('operation_delete_empty', 1, [
+            { key: '', beforeHash: incrementalHash(emptyKeyValue), afterHash: null, deleted: true },
+        ]));
+        assert.equal((await store.snapshot()).entries[''].deleted, true);
+    });
+    await withStore('portable', async (_root, store) => {
+        await assert.rejects(store.commit({ ...identity('operation_empty_portable', 0, [
+            { key: '', beforeHash: null, afterHash: incrementalHash('not portable'), value: 'not portable' },
+        ]), mode: 'portable', scope: { mode: 'portable' } }), error => error.code === 'incrementalScopeViolation');
+    });
+    await withStore('full', async (_root, store) => {
+        const value = 'explicitly selected empty key';
+        await store.commit({ ...identity('operation_empty_selected', 0, [
+            { key: '', beforeHash: null, afterHash: incrementalHash(value), value },
+        ]), mode: 'selected', scope: { mode: 'selected', selectedScope: { kind: 'keys', keys: [''] } } });
+        assert.equal((await store.snapshot()).entries[''].value, value);
     });
 });
 

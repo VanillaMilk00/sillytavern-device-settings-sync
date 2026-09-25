@@ -7,9 +7,9 @@ npm test
 npm run check
 ```
 
-v1.10.1 has **120 passing Node unit/behavior tests**, a passing syntax check, and isolated Edge Chromium integration coverage on SillyTavern 1.14.0 with Node.js 22: **30 management checks and 14 automatic-mode checks passed**. New tests cover isolated native-storage notifications, dirty-key-only reads, 1,000 repeated writes coalescing to one key, event batching, the 10-second quiet period and 30-second minimum batch gap, Unicode/large-value deltas, idempotent incremental commits, chunk validation and server-version retention. Firefox, WebKit and physical mobile devices were not tested; mobile coverage uses a browser viewport.
+v1.10.2 has **120 passing Node unit/behavior tests**, a passing syntax check, and isolated Edge Chromium integration coverage on SillyTavern 1.14.0 with Node.js 22: **30 management checks and 14 automatic-mode checks passed**. In addition, **9 isolated server-security checks passed**, including account isolation, CSRF enforcement and empty-string keys in full localStorage mode. New tests cover isolated native-storage notifications, dirty-key-only reads, 1,000 repeated writes coalescing to one key, event batching, the 10-second quiet period and 30-second minimum batch gap, Unicode/large-value deltas, idempotent incremental commits, chunk validation and server-version retention. Firefox, WebKit and physical mobile devices were not tested; mobile coverage uses a browser viewport.
 
-v1.10.1 目前有 **120 項 Node.js 單元／行為測試全數通過**、語法檢查通過，並已在 SillyTavern 1.14.0、Node.js 22 的隔離環境完成 Edge Chromium 驗收：管理介面 **30 項**、自動模式 **14 項**全數通過。新增案例涵蓋隔離頁框的原生儲存通知、只讀取待處理鍵、同鍵 1,000 次變更合併、10 秒安靜時間與 30 秒批次間隔、Unicode／大型值差分、增量提交重試去重、分塊驗證及伺服器版本保留。Firefox、WebKit 與實體手機尚未驗證；手機排版僅以瀏覽器視窗尺寸測試。
+v1.10.2 目前有 **120 項 Node.js 單元／行為測試全數通過**、語法檢查通過，並已在 SillyTavern 1.14.0、Node.js 22 的隔離環境完成 Edge Chromium 驗收：管理介面 **30 項**、自動模式 **14 項**全數通過。另外 **9 項隔離伺服器安全測試**通過，涵蓋帳戶隔離、CSRF 防護與完整 localStorage 的空字串鍵。新增案例也涵蓋隔離頁框的原生儲存通知、只讀取待處理鍵、同鍵 1,000 次變更合併、10 秒安靜時間與 30 秒批次間隔、Unicode／大型值差分、增量提交重試去重、分塊驗證及伺服器版本保留。Firefox、WebKit 與實體手機尚未驗證；手機排版僅以瀏覽器視窗尺寸測試。
 
 保留原有 20 項測試，加入備份與資料操作案例。測試以暫存資料夾或記憶體 Storage 執行，不操作日常帳戶。CI 執行 Node.js 18、20、24。
 
