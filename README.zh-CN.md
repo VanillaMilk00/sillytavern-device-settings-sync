@@ -4,7 +4,7 @@
 
 让同一个 SillyTavern 账户在手机、桌面及其他设备之间手动同步设置，并可选择自动同步可移植浏览器设置。
 
-当前版本：**1.10.2**。IndexedDB 只会把明确选中的项目纳入手动同步，不会随 localStorage 自动同步。增量自动保存至少需要 1.10.0 服务器插件；1.10.2 修复了完整模式下空字符串键的同步问题。如果使用完整 localStorage 模式，请将服务器插件更新至 1.10.2 并重启 SillyTavern。更新前端扩展后刷新浏览器即可。
+当前版本：**1.11.0**。IndexedDB 只会把明确选中的项目纳入手动同步，不会随 localStorage 自动同步。首次从 1.10.2 升级后仍须**正常重启 SillyTavern 一次**，让新的服务器加载器生效。以后更新兼容版本时，在酒馆更新扩展并刷新页面，管理员页面会自动应用新版服务器插件，不用再输入命令或重启酒馆。
 
 ## 功能
 
@@ -75,7 +75,7 @@ try {
 
 ## 安装与升级
 
-需要 SillyTavern 1.14.0+、Node.js 18+，并启用 Server Plugins。v1.10.2 的 120 项单元／行为测试和语法检查已通过；另在隔离的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 环境通过 30 项管理界面和 14 项自动模式浏览器检查，涵盖桌面／手机尺寸及三语界面。服务器安全测试也涵盖增量同步及完整 localStorage 特殊键。测试也确认同一键快速连续变更会合并、自动下载不会在每次模型请求后重扫存储空间，且背景工作者不可用时不会阻塞前景保存。Firefox、WebKit 和实体手机尚未验证；旧版同步功能也曾在 SillyTavern 1.18.0 测试。这些结果不代表所有模型扩展、浏览器和实体手机均已验证。CI 覆盖 Node.js 18、20、24。
+需要 SillyTavern 1.14.0+、Node.js 18+，并启用 Server Plugins。v1.11.0 的 126 项单元／行为测试及语法检查通过；在隔离的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 环境，还通过 30 项管理界面、14 项自动模式、2 项热更新浏览器检查，以及 9 项服务器安全检查。Firefox、WebKit 和实体手机尚未验证；旧版同步功能也曾在 SillyTavern 1.18.0 测试。CI 配置覆盖 Windows／Linux 与 Node.js 18、20、24。
 
 1. 在「扩展 → 安装扩展」中输入：
 
@@ -92,7 +92,7 @@ try {
 
    如果是「为自己安装」，请使用 `data/<账户>/extensions/` 下的安装脚本。
 
-4. 重启 SillyTavern。以后通过扩展管理器更新时，服务器端代码也会更新，但仍需重启才能生效。
+4. 重启 SillyTavern。从 1.10.2 或更旧版本升级到 1.11.0，也必须重启这一次：旧服务器没有动态加载器。以后更新兼容版本时，在扩展管理器更新并刷新页面；管理员页面核对来源后自动应用新版服务器插件。普通用户只能查看状态。更新失败会保留旧版，并提供“重试”。仅更新插件不会触发数据同步或备份。固定加载器或 Node.js 环境不兼容时，仍会提示正常重启。
 
 官方 Docker 容器名为 `sillytavern` 时，可以在宿主机运行自动检测命令，兼容全局与账户专属安装：
 
@@ -184,7 +184,8 @@ JSON 文件／备份请求限制 **32 MiB**，超限拒绝且不修改原数据�
 - `GET /backups`：最多五份摘要，不包含设置值。
 - `POST /backups`：`{ operationId, reason, archive }`，原因为 `upload`、`download`、`import`、`restore`、`delete`。
 - `GET /backups/:id`：仅访问当前账户保留中的指定快照。
-- `GET /health`：能力标记新增 `incremental-localstorage-v1`。增量自动上传需要 1.10.0 以上服务器插件；完整模式下空字符串键的支持需要 1.10.2。更新服务器插件后需重启 SillyTavern。旧版服务器仍可手动同步，但不支持增量自动上传。
+- `GET /health`：提供 `runtime-reload-v1`、运行中／已安装版本、更新状态及操作权限。页面启动时只检查一次，不读取同步内容；旧版加载器会提示首次重启。
+- `POST /runtime/reload`：仅管理员通过登录与 CSRF 验证后可调用，并须提供与安装来源一致的内容哈希。服务器核对全部文件、建立私有程序副本并启动新 Worker，等既有同步请求完成后切换。失败或等待超过 30 秒时仍运行旧版；客户端不能指定命令、路径或下载地址。仅保留当前和上一个成功的程序副本，用户数据格式不变。
 - `GET /incremental/state`、`GET /incremental/snapshot`：读取版本／键哈希或当前快照。`POST /incremental/commit`：带预期版本、操作标识及仅变更键的原子提交；冲突返回 HTTP 409，同一提交可安全重试。
 - `POST /incremental/transfers/start`、`PUT /incremental/transfers/:id/chunks/:index`、`POST /incremental/transfers/:id/finish`：对大型差异分块暂存；全部收齐并通过完整性核验后才会发布，未完成传输 24 小时后清理。
 - `GET /incremental/versions`、`GET /incremental/versions/:id`、`POST /incremental/versions/:id/restore`：列出、读取或确认后还原最多五份服务器版本，与本机救援备份分开保存。

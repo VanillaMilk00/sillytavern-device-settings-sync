@@ -8,14 +8,7 @@ import express from 'express';
 // Resolve SillyTavern from its working directory so the server plugin can be
 // linked to this repository. Node resolves relative imports from a symlink's
 // real path, which would otherwise point into public/scripts/extensions.
-const {
-    getCookieSecret,
-    getCookieSessionName,
-    getSessionCookieAge,
-    getUserDirectories,
-    requireLoginMiddleware,
-    setUserDataMiddleware,
-} = await import(pathToFileURL(path.resolve(process.cwd(), 'src/users.js')).href);
+let getUserDirectories;
 import { createInitialState, MAX_STATE_BYTES, mergeMutations, normalizeState, touchSettings } from './state.js';
 import { BackupStore } from './backups.js';
 import { commitMutations, findCommit } from './commit.js';
@@ -34,7 +27,7 @@ export const info = {
 
 function getUserRoot(request) {
     const handle = request?.user?.profile?.handle || request?.session?.handle;
-    const configuredRoot = request?.user?.directories?.root || (handle ? getUserDirectories(handle).root : '');
+    const configuredRoot = request?.user?.directories?.root || (handle && getUserDirectories ? getUserDirectories(handle).root : '');
     if (typeof configuredRoot !== 'string' || !configuredRoot) throw new Error('Authenticated user directory is unavailable');
     const root = path.resolve(configuredRoot);
     const dataRoot = path.resolve(globalThis.DATA_ROOT);
@@ -94,7 +87,10 @@ function sendError(response, error) {
     response.status(status).json({ error: status === 500 ? 'Settings sync failed' : error.message });
 }
 
-function installSillyTavernSecurity(router) {
+async function installSillyTavernSecurity(router) {
+    const users = await import(pathToFileURL(path.resolve(process.cwd(), 'src/users.js')).href);
+    const { getCookieSecret, getCookieSessionName, getSessionCookieAge, requireLoginMiddleware, setUserDataMiddleware } = users;
+    getUserDirectories = users.getUserDirectories;
     // Server plugins are mounted before SillyTavern's normal session and CSRF middleware.
     // Apply the same official middleware here so every state remains scoped to the
     // authenticated account and POST requests cannot be forged cross-origin.
@@ -127,8 +123,8 @@ function installSillyTavernSecurity(router) {
     router.use(express.json({ limit: '6mb' }));
 }
 
-export async function init(router) {
-    installSillyTavernSecurity(router);
+export async function init(router, { security = true } = {}) {
+    if (security) await installSillyTavernSecurity(router);
 
     router.get('/incremental/state', async (request, response) => {
         try {
@@ -274,7 +270,7 @@ export async function init(router) {
     });
 
     router.get('/health', (_request, response) => {
-        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.10.2', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1', 'indexeddb-scoped-download-v1', 'incremental-localstorage-v1'] });
+        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.11.0', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1', 'indexeddb-scoped-download-v1', 'incremental-localstorage-v1'] });
     });
 
     router.post('/indexeddb/transfers/start', async (request, response) => {

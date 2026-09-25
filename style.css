@@ -123,6 +123,7 @@
 .dss_idb_record small, .dss_idb_tree summary small { opacity: .72; }
 .dss_idb_record input, .dss_idb_tree summary input { width: 16px; min-width: 16px; margin: 0; }
 #device_settings_sync_panel #dss_settings_menu select { width: 100%; }
+#device_settings_sync_panel #dss_runtime_retry[hidden] { display: none; }
 
 @media (max-width: 760px) {
     .dss_explorer_layout { grid-template-columns: minmax(0, 1fr); }

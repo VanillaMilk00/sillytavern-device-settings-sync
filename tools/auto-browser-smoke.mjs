@@ -77,7 +77,9 @@ try {
         await page.waitForFunction(() => ![...document.querySelectorAll('#dss_auto input')].some(node => node.disabled));
     }
     await ready(page);
-    assert.deepEqual(traffic, []);
+    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().runtime?.state === 'ready');
+    assert.deepEqual(traffic, ['GET ' + base + '/health']);
+    traffic.length = 0;
     assert.equal(await page.locator('#dss_auto input[data-auto="upload"]').isChecked(), false);
     assert.equal(await page.locator('#dss_auto input[data-auto="download"]').isChecked(), false);
     await page.evaluate(() => localStorage.setItem('auto:theme', 'base'));

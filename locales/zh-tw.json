@@ -317,5 +317,15 @@
   "dss.manager.backingUp": "正在保存完整備份",
   "dss.manager.applying": "正在套用本機變更",
   "dss.manager.networkError": "請求失敗，請檢查連線後重試。",
-  "dss.manager.requestError": "伺服器請求失敗（HTTP {status}）。"
+  "dss.manager.requestError": "伺服器請求失敗（HTTP {status}）。",
+  "dss.runtime.checking": "正在檢查伺服器插件版本…",
+  "dss.runtime.ready": "伺服器插件已是最新版。",
+  "dss.runtime.preparing": "正在準備伺服器插件更新…",
+  "dss.runtime.waiting": "正在等待目前的同步請求完成…",
+  "dss.runtime.failed": "伺服器插件更新失敗，目前仍使用舊版。",
+  "dss.runtime.restartRequired": "首次啟用自動更新需要正常重啟酒館一次。",
+  "dss.runtime.sourceMismatch": "伺服器插件連到另一份擴充，請更新那份擴充。",
+  "dss.runtime.nonAdmin": "伺服器插件將由管理員套用更新。",
+  "dss.runtime.sourceInvalid": "伺服器插件檔案不完整，請重新更新擴充。",
+  "dss.runtime.retry": "重試伺服器插件更新"
 }

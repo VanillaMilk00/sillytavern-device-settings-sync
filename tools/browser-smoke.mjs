@@ -38,8 +38,10 @@ try {
         });
     }
     await ready();
-    assert.equal(requests.length, 0);
-    pass('page load never contacts sync or backup APIs');
+    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().runtime?.state === 'ready');
+    assert.deepEqual(requests, ['GET ' + base + '/health']);
+    requests.length = 0;
+    pass('page load checks only backend version, never sync or backup data');
     await page.evaluate(async () => {
         localStorage.clear();
         localStorage.setItem('qa:settings', '{"theme":"dark","name":"中文😀"}');

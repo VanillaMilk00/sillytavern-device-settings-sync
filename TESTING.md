@@ -7,9 +7,9 @@ npm test
 npm run check
 ```
 
-v1.10.2 has **120 passing Node unit/behavior tests**, a passing syntax check, and isolated Edge Chromium integration coverage on SillyTavern 1.14.0 with Node.js 22: **30 management checks and 14 automatic-mode checks passed**. In addition, **9 isolated server-security checks passed**, including account isolation, CSRF enforcement and empty-string keys in full localStorage mode. New tests cover isolated native-storage notifications, dirty-key-only reads, 1,000 repeated writes coalescing to one key, event batching, the 10-second quiet period and 30-second minimum batch gap, Unicode/large-value deltas, idempotent incremental commits, chunk validation and server-version retention. Firefox, WebKit and physical mobile devices were not tested; mobile coverage uses a browser viewport.
+v1.11.0 has **126 passing Node unit/behavior tests** and a passing syntax and release-manifest check. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium passed **30 management, 14 automatic-mode, 2 runtime-update browser and 9 server-security checks**. Runtime tests cover dependency replacement, incomplete/tampered/broken candidates, duplicate reloads, request draining/timeouts and snapshot retention. Firefox, WebKit, physical mobile devices and the full CI platform matrix were not tested locally; mobile coverage uses a browser viewport.
 
-v1.10.2 目前有 **120 項 Node.js 單元／行為測試全數通過**、語法檢查通過，並已在 SillyTavern 1.14.0、Node.js 22 的隔離環境完成 Edge Chromium 驗收：管理介面 **30 項**、自動模式 **14 項**全數通過。另外 **9 項隔離伺服器安全測試**通過，涵蓋帳戶隔離、CSRF 防護與完整 localStorage 的空字串鍵。新增案例也涵蓋隔離頁框的原生儲存通知、只讀取待處理鍵、同鍵 1,000 次變更合併、10 秒安靜時間與 30 秒批次間隔、Unicode／大型值差分、增量提交重試去重、分塊驗證及伺服器版本保留。Firefox、WebKit 與實體手機尚未驗證；手機排版僅以瀏覽器視窗尺寸測試。
+v1.11.0 目前有 **126 項 Node.js 單元／行為測試全數通過**、語法及發布清單檢查通過，並已在 SillyTavern 1.14.0、Node.js 22 的隔離環境完成 Edge Chromium 驗收：管理介面 **30 項**、自動模式 **14 項**、熱更新 **2 項**及伺服器安全 **9 項**。熱更新測試涵蓋相依程式替換、殘缺／竄改／損壞候選版本、重複更新、請求排空／逾時及程式副本保留。Firefox、WebKit、實體手機及完整 CI 平台矩陣尚未於本機驗證。
 
 保留原有 20 項測試，加入備份與資料操作案例。測試以暫存資料夾或記憶體 Storage 執行，不操作日常帳戶。CI 執行 Node.js 18、20、24。
 
@@ -33,9 +33,9 @@ The original 20 tests remain, with additional backup and storage-operation cover
 2. 將本擴充複製或 clone 至該安裝的 `public/scripts/extensions/third-party/sillytavern-device-settings-sync`；勿連結到另一個沒有主機相依套件的工作區。
 3. 在隔離主機執行擴充的 `install-server-plugin.mjs .`。設定 `enableServerPlugins: true`、`port: 18765`、`listen: false`、`browserLaunch.enabled: false`。僅測試副本可關閉擴充自動更新，以免 QA 過程取得其他版本。
 4. 在測試主機安裝 Playwright：`npm install --no-save --package-lock=false playwright`。需有 Edge（預設），或設定其他 Chromium channel。
-5. 啟動 `node server.js`。瀏覽器測試先保持 `enableUserAccounts: false`。
+5. 啟動 `node server.js`。建議使用 `enableUserAccounts: true`，並設定 `DSS_QA_HANDLE=default-user`；測試只使用隔離的無密碼 QA 管理員。
 
-Clone the official SillyTavern 1.14.0 into a separate directory, run `npm ci`, copy/clone this extension into its global third-party extension directory, and run the installer from the host root. Enable server plugins, use loopback port 18765, disable automatic browser launch, and install Playwright in that disposable host. Do not use a symlink whose real path lacks the host dependencies. Start with user accounts disabled for the browser suite. Disable auto-update in the test copy only if needed to keep the tested revision stable.
+Clone the official SillyTavern 1.14.0 into a separate directory, run `npm ci`, copy/clone this extension into its global third-party extension directory, and run the installer from the host root. Enable server plugins and user accounts, use loopback port 18765, disable automatic browser launch, and install Playwright in that disposable host. Set `DSS_QA_HANDLE=default-user` for the passwordless QA administrator. Do not use a symlink whose real path lacks the host dependencies. Disable auto-update in the test copy only if needed to keep the tested revision stable.
 
 在擴充根目錄執行，以下為 PowerShell 範例；路徑請替換為你的隔離安裝。
 
@@ -48,7 +48,14 @@ $env:DSS_PLAYWRIGHT_MODULE = 'C:\path\to\qa\SillyTavern\node_modules\playwright\
 $env:DSS_QA_OUTPUT = 'C:\path\to\qa\artifacts'
 node tools/browser-smoke.mjs
 node tools/auto-browser-smoke.mjs
+node tools/server-smoke.mjs
+$env:DSS_QA_EXTENSION = 'C:\path\to\qa\SillyTavern\public\scripts\extensions\third-party\sillytavern-device-settings-sync'
+node tools/runtime-browser-smoke.mjs
 ```
+
+`runtime-browser-smoke.mjs` 僅修改 `DSS_QA_EXTENSION` 指向的隔離副本，模擬更新擴充後重新整理頁面、相依程式熱切換及備份收據重試，結束時還原測試檔案。執行前請確認該路徑不是日常安裝。
+
+`runtime-browser-smoke.mjs` changes only the disposable `DSS_QA_EXTENSION` copy to simulate an update and refresh, verify a changed dependency, and replay a backup receipt. It restores the test files afterward. Verify that the path is never a daily-use installation.
 
 預設使用已安裝的 Edge；可透過 `DSS_BROWSER_CHANNEL=chrome` 改用 Chrome。若擴充本身能解析 `playwright`，可省略 `DSS_PLAYWRIGHT_MODULE`。截圖寫入指定資料夾（預設為已被 Git 忽略的 `qa-artifacts/`）。
 
@@ -70,9 +77,9 @@ The automatic browser script starts a loopback model fixture and checks stream h
 
 ## 登入與 CSRF / Authentication and CSRF
 
-停止隔離主機，設定 `enableUserAccounts: true` 後重啟，保留全新安裝的無密碼 `default-user` 管理員。沿用上述環境變數執行：
+若上方尚未啟用帳戶，先停止隔離主機，設定 `enableUserAccounts: true` 後重啟，保留全新安裝的無密碼 `default-user` 管理員。沿用上述環境變數執行：
 
-Stop the disposable server, enable user accounts, restart, and keep its fresh passwordless `default-user` administrator. With the same environment variables:
+If user accounts were not enabled above, stop the disposable server, enable them, restart, and keep its fresh passwordless `default-user` administrator. With the same environment variables:
 
 ```bash
 node tools/server-smoke.mjs

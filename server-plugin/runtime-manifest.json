@@ -1,0 +1,47 @@
+{
+  "loaderProtocol": 1,
+  "version": "1.11.0",
+  "files": [
+    {
+      "path": "server-plugin/index.js",
+      "sha256": "58a72c51e7889b468b1078a16be522bfa6897afea44f16bfca48ad0874f63deb"
+    },
+    {
+      "path": "server-plugin/worker-runner.mjs",
+      "sha256": "9d8e32710d7a5ae1de8423a9df87635407b3266be1843b1855680961680463ca"
+    },
+    {
+      "path": "server-plugin/backups.js",
+      "sha256": "1c935cee77705402d227451b82f970515a3f789c785f706ef5f2e10e06fb2f26"
+    },
+    {
+      "path": "server-plugin/commit.js",
+      "sha256": "6dfdc10ec791a430d78a2a16ed4de5cd4bf391cb025aee607cb6bef23eb1f496"
+    },
+    {
+      "path": "server-plugin/indexeddb.js",
+      "sha256": "1a863adcc9c71b75737caa1eb6441637032e503fed618a5ebec0ac3aae9c43bb"
+    },
+    {
+      "path": "server-plugin/incremental.js",
+      "sha256": "86a135e4afe5856e44e1cfc5a5cbc01423304a80bfd7fdc269fd586e01aa711c"
+    },
+    {
+      "path": "server-plugin/state.js",
+      "sha256": "7a4432d6c44d133c3f51a1e6f9cf203bf36cfe2452bdb31cc869f7bf5beb12ec"
+    },
+    {
+      "path": "lib/filter.js",
+      "sha256": "9875f3dbd6d2a5db8b6ab27334938af62cb1be85a1dca42ae8ee4a85c5a2dde0"
+    },
+    {
+      "path": "lib/indexeddb-model.js",
+      "sha256": "68ac1c2e48e485fc0a8b9db69ee8f7d70c52369e0bc12e3f7bbd82e66fb8d1ff"
+    },
+    {
+      "path": "lib/storage-model.js",
+      "sha256": "87566eafe7934b5b2fecb1148131c0ba73089b247198c46437bfd1aca7db8acb"
+    }
+  ],
+  "build": "a1c6c2f753b7444196f1c611ae8c6e1a9e934734625086a1b17a2a72c33d5b7c"
+}

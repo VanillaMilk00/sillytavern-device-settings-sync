@@ -317,5 +317,15 @@
   "dss.manager.backingUp": "正在保存完整备份",
   "dss.manager.applying": "正在应用本机更改",
   "dss.manager.networkError": "请求失败，请检查连接后重试。",
-  "dss.manager.requestError": "服务器请求失败（HTTP {status}）。"
+  "dss.manager.requestError": "服务器请求失败（HTTP {status}）。",
+  "dss.runtime.checking": "正在检查服务器插件版本…",
+  "dss.runtime.ready": "服务器插件已是最新版本。",
+  "dss.runtime.preparing": "正在准备服务器插件更新…",
+  "dss.runtime.waiting": "正在等待当前同步请求完成…",
+  "dss.runtime.failed": "服务器插件更新失败，目前仍使用旧版。",
+  "dss.runtime.restartRequired": "首次启用自动更新需要正常重启酒馆一次。",
+  "dss.runtime.sourceMismatch": "服务器插件连接到另一份扩展，请更新那份扩展。",
+  "dss.runtime.nonAdmin": "服务器插件将由管理员应用更新。",
+  "dss.runtime.sourceInvalid": "服务器插件文件不完整，请重新更新扩展。",
+  "dss.runtime.retry": "重试服务器插件更新"
 }

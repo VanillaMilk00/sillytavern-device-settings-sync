@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.11.0 - 2026-09-26
+
+### 繁體中文
+
+- 加入固定載入器及可替換的伺服器 Worker。更新擴充、重新整理網頁後，管理員可自動套用相容新版；普通使用者只查看狀態。失敗保留舊版並提供重試。
+- 新增完整檔案雜湊清單、來源核對、私有程式副本、30 秒請求排空及至多兩份程式副本保留。既有同步 API、帳戶隔離、CSRF、備份和重試收據維持相容。
+- **從 1.10.2 升級仍需正常重啟一次**，讓酒館載入新載入器；往後若載入器或執行環境不相容，仍可能需要重啟。未更新正式 NAS。
+
+### 简体中文
+
+- 新增固定加载器与可替换的服务器 Worker。更新扩展并刷新页面后，管理员页面自动应用兼容版本；普通用户只能查看状态。失败时保留旧版，并可重试。
+- 增加完整文件哈希清单、来源校验、私有程序副本、30 秒请求排空，以及最多两份程序副本保留。现有同步 API、账户隔离、CSRF、备份及重试收据保持兼容。
+- **从 1.10.2 升级仍须正常重启一次**，让酒馆加载新加载器；以后加载器或运行环境不兼容时也可能需要重启。未更新正式 NAS。
+
+### English
+
+- Add a stable bootstrap and replaceable server Worker. After an extension update and page refresh, an administrator's page automatically applies compatible backend builds; regular users only see status. A failure retains the old build and offers Retry.
+- Add a complete hashed file manifest, source verification, private program snapshots, a 30-second request drain and at most two retained successful snapshots. Existing APIs, account isolation, CSRF, backups and idempotent receipts remain compatible.
+- **One normal restart is still required when upgrading from 1.10.2** to load the bootstrap. Later incompatible bootstrap/runtime changes may also require a restart. Production NAS was not updated.
+
 ## 1.10.2 - 2026-09-26
 
 ### 繁體中文

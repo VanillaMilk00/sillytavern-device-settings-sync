@@ -4,7 +4,7 @@
 
 Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.10.2**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. Incremental autosave requires server plugin 1.10.0 or newer. Version 1.10.2 fixes empty-string key support in full localStorage mode; if you use that mode, update the server plugin to 1.10.2 and restart SillyTavern. Refresh the browser after updating the frontend extension.
+Version **1.11.0**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. The first upgrade from 1.10.2 still requires **one normal SillyTavern restart** to load the new server bootstrap. After that, update the extension and refresh the page: an administrator's page automatically applies compatible server-plugin updates without another command or restart.
 
 ## Features
 
@@ -75,7 +75,7 @@ Preferences, baselines and scheduling are internal data: excluded from ordinary 
 
 ## Installation and upgrade
 
-Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. All 120 v1.10.2 Node unit/behavior tests and syntax checks pass. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium also passed 30 management checks and 14 automatic-mode checks, including desktop/mobile-sized viewports and all three languages. Server security tests also cover incremental sync and special keys in full localStorage mode. Tests verify repeated edits to one key are coalesced, automatic download does not rescan storage after every model request, and unavailable Background Sync cannot block foreground saves. Firefox, WebKit and physical mobile devices have not been tested. Earlier sync versions were also tested on SillyTavern 1.18.0; these results do not establish compatibility with every model extension, host version or browser. CI covers Node.js 18, 20 and 24.
+Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. All 126 v1.11.0 Node unit/behavior tests and syntax checks pass. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium passed 30 management, 14 automatic-mode and 2 runtime-update browser checks, plus 9 server-security checks. Firefox, WebKit and physical mobile devices have not been tested. Earlier sync versions were also tested on SillyTavern 1.18.0; these results do not establish compatibility with every model extension, host version or browser. CI is configured for Windows/Linux and Node.js 18, 20 and 24.
 
 1. In Extensions → Install extension, enter:
 
@@ -92,7 +92,7 @@ Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. All 120 v
 
    This command also works in Windows PowerShell. For a per-user installation, use the install script under `data/<account>/extensions/` instead.
 
-4. Restart SillyTavern. After future extension updates, restart it again to reload server-side code.
+4. Restart SillyTavern. This one restart is also required when upgrading from 1.10.2 or earlier: the old server has no dynamic bootstrap. For later compatible releases, update the extension and refresh the browser. An administrator's page verifies the source and automatically applies the server plugin. Regular users can view the status. A failed update keeps the previous version running and offers Retry. Updates alone do not sync or back up user data. Incompatible bootstrap or Node.js changes may still require a normal restart.
 
 For the official Docker container named `sillytavern`, this host command detects both global and per-user extension installations:
 
@@ -184,7 +184,8 @@ All APIs use SillyTavern session authentication and CSRF protection. Under `/api
 - `GET /backups`: up to five summaries, without values.
 - `POST /backups`: `{ operationId, reason, archive }`; reasons are `upload`, `download`, `import`, `restore`, `delete`.
 - `GET /backups/:id`: a retained backup belonging to the current account.
-- `GET /health`: adds the `incremental-localstorage-v1` capability. Incremental automatic uploads require server plugin 1.10.0 or newer; empty-string keys in full mode require 1.10.2. Restart SillyTavern after updating the server plugin. Older plugins still support manual sync but not incremental automatic uploads.
+- `GET /health`: includes `runtime-reload-v1`, active/installed builds, update status and permission. Page startup checks this once without reading sync contents; an older bootstrap asks for the initial restart.
+- `POST /runtime/reload`: administrator, login and CSRF protected, and requires the expected installed content hash. The server verifies all source files, stages a private copy and starts a new Worker before waiting for accepted requests to finish. Failure or a 30-second drain timeout leaves the old runtime active. The client cannot supply commands, paths or download URLs. Only the current and previous successful program snapshots are retained; user data formats do not change.
 - `GET /incremental/state`, `GET /incremental/snapshot`: read the server revision/key hashes or a snapshot. `POST /incremental/commit`: atomically submit changed keys with an expected revision and operation ID; conflicts return HTTP 409 and identical retries are safe.
 - `POST /incremental/transfers/start`, `PUT /incremental/transfers/:id/chunks/:index`, `POST /incremental/transfers/:id/finish`: stage large differences in chunks and publish only after all chunks pass integrity checks. Incomplete transfers expire after 24 hours.
 - `GET /incremental/versions`, `GET /incremental/versions/:id`, `POST /incremental/versions/:id/restore`: list, read or restore—after confirmation—up to five server versions, separate from local rescue backups.

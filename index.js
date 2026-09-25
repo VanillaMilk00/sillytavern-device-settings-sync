@@ -4,6 +4,7 @@ import { extension_settings } from '../../../extensions.js';
 import { translate } from '../../../i18n.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup } from '../../../popup.js';
 import { DEFAULT_MAX_VALUE_BYTES, parseAdditionalExcludes } from './lib/filter.js';
+import { SERVER_RUNTIME_BUILD } from './lib/runtime-build.js';
 import { readStorage, createArchive, serializeArchive, totalBytes, assertUnchanged, applyPlan, StorageError, isInternalKey } from './lib/storage-model.js';
 import { msg, errorText, bytes } from './lib/messages.js';
 import { openStorageManager } from './ui/storage-manager.js';
@@ -19,7 +20,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.10.2';
+const VERSION = '1.11.0';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -53,6 +54,27 @@ let managerOpen = false;
 let settingsOpen = false;
 let provisionalDeviceId;
 let automatic;
+let runtimeCheck;
+const runtimeStatus = { state: 'checking', error: '', canReload: false, activeBuild: '', installedBuild: '' };
+
+function renderRuntimeStatus() {
+    const status = document.querySelector('#dss_runtime_status');
+    if (!status) return;
+    const labels = {
+        checking: tr('dss.runtime.checking', 'Checking server plugin version…'),
+        ready: tr('dss.runtime.ready', 'Server plugin is up to date.'),
+        preparing: tr('dss.runtime.preparing', 'Preparing server plugin update…'),
+        waiting: tr('dss.runtime.waiting', 'Waiting for current sync requests to finish…'),
+        failed: tr('dss.runtime.failed', 'Server plugin update failed. The previous version is still running.'),
+        restartRequired: tr('dss.runtime.restartRequired', 'The server plugin needs one normal restart to enable automatic updates.'),
+        sourceMismatch: tr('dss.runtime.sourceMismatch', 'The server plugin is linked to another extension copy. Update that copy instead.'),
+        nonAdmin: tr('dss.runtime.nonAdmin', 'An administrator will apply the server plugin update.'),
+        sourceInvalid: tr('dss.runtime.sourceInvalid', 'Server plugin files are incomplete. Update the extension again.'),
+    };
+    status.textContent = labels[runtimeStatus.state] || labels.failed;
+    const retry = document.querySelector('#dss_runtime_retry');
+    if (retry) retry.hidden = runtimeStatus.state !== 'failed' || !runtimeStatus.canReload;
+}
 
 function tr(key, fallback) {
     return translate(fallback, key);
@@ -378,6 +400,52 @@ async function request(path, options = {}) {
         throw Object.assign(new Error(body?.error || `Settings sync HTTP ${response.status}`), { status: response.status });
     }
     return body;
+}
+
+function setRuntimeStatus(patch) {
+    Object.assign(runtimeStatus, patch);
+    diagnostics.runtime = { ...runtimeStatus };
+    renderRuntimeStatus();
+}
+
+async function applyRuntimeUpdate({ retry = false } = {}) {
+    let health = await request('/health');
+    if (!health.capabilities?.includes('runtime-reload-v1')) {
+        setRuntimeStatus({ state: 'restartRequired' });
+        return;
+    }
+    let state = health.runtime || {};
+    const update = () => setRuntimeStatus({
+        state: state.state || 'checking', error: state.error || '', canReload: state.canReload === true,
+        activeBuild: state.activeBuild || '', installedBuild: state.installedBuild || '',
+    });
+    update();
+    if (state.activeBuild === SERVER_RUNTIME_BUILD) { setRuntimeStatus({ state: 'ready' }); return; }
+    if (state.state === 'restartRequired') return;
+    if (state.state === 'sourceInvalid') return;
+    if (state.installedBuild !== SERVER_RUNTIME_BUILD) { setRuntimeStatus({ state: 'sourceMismatch' }); return; }
+    if (!state.canReload) { setRuntimeStatus({ state: 'nonAdmin' }); return; }
+    if (state.state === 'failed' && !retry) return;
+    if (!['preparing', 'waiting'].includes(state.state)) {
+        await request('/runtime/reload', { method: 'POST', body: JSON.stringify({ expectedBuild: SERVER_RUNTIME_BUILD, retry }) });
+    }
+    for (let count = 0; count < 40; count++) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        health = await request('/health');
+        state = health.runtime || {};
+        update();
+        if (state.activeBuild === SERVER_RUNTIME_BUILD) { setRuntimeStatus({ state: 'ready' }); return; }
+        if (['failed', 'restartRequired', 'sourceInvalid'].includes(state.state)) return;
+    }
+    setRuntimeStatus({ state: 'failed', error: 'runtimeUpdateTimeout' });
+}
+
+function checkRuntimeUpdate(options) {
+    if (runtimeCheck) return runtimeCheck;
+    runtimeCheck = applyRuntimeUpdate(options).catch(error => {
+        setRuntimeStatus({ state: 'failed', error: error.code || error.message || 'runtimeReloadFailed' });
+    }).finally(() => { runtimeCheck = null; });
+    return runtimeCheck;
 }
 
 function requestHeaders() { return getRequestHeaders(); }
@@ -840,6 +908,7 @@ function bindPanel() {
         toggle.setAttribute('aria-expanded', String(settingsOpen));
         automatic?.configure();
     });
+    document.querySelector('#dss_runtime_retry')?.addEventListener('click', () => checkRuntimeUpdate({ retry: true }));
     const mode = document.querySelector('#dss_storage_mode');
     mode.value = localStorageMode();
     mode.addEventListener('change', async () => {
@@ -937,6 +1006,8 @@ function createPanel() {
                 <button id="dss_settings_toggle" class="menu_button" type="button" aria-expanded="false" aria-controls="dss_settings_menu" data-i18n="dss.manager.settingsTitle">Settings</button>
                 <div id="dss_settings_menu" hidden>
                     <div id="dss_auto"></div>
+                    <p id="dss_runtime_status" role="status"></p>
+                    <button id="dss_runtime_retry" class="menu_button" type="button" hidden data-i18n="dss.runtime.retry">Retry server plugin update</button>
                     <label for="dss_storage_mode" data-i18n="dss.manager.storageMode">localStorage synchronization range</label>
                     <select id="dss_storage_mode" class="text_pole">
                         <option value="portable" data-i18n="dss.manager.modePortable">Portable settings only</option>
@@ -966,6 +1037,7 @@ function createPanel() {
         </div>`;
     container.append(panel);
     bindPanel();
+    renderRuntimeStatus();
     restorePullResult();
     refreshSnapshot();
     renderStatus();
@@ -1053,7 +1125,10 @@ async function initializeAutomatic() {
     } catch (error) { globalThis.toastr?.error(errorText(error)); }
 }
 
-eventSource.on(event_types.APP_READY, initializeAutomatic);
+eventSource.on(event_types.APP_READY, () => {
+    void checkRuntimeUpdate();
+    void initializeAutomatic();
+});
 
 globalThis.DeviceSettingsSync = {
     syncNow: manualPull,

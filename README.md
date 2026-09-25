@@ -4,7 +4,7 @@
 
 讓同一個 SillyTavern 帳戶在手機、桌面及其他裝置之間，手動同步設定，並可選擇自動同步可攜式瀏覽器設定。
 
-目前版本：**1.10.2**。IndexedDB 只納入手動同步中明確選取的項目，不會隨 localStorage 自動同步。增量自動保存至少需要 1.10.0 伺服器插件；1.10.2 修正完整模式的空字串鍵同步，若使用完整 localStorage 模式，請更新伺服器插件至 1.10.2 並重啟 SillyTavern。更新前端擴充後重新整理瀏覽器即可。
+目前版本：**1.11.0**。IndexedDB 只納入手動同步中明確選取的項目，不會隨 localStorage 自動同步。首次從 1.10.2 升級時，更新擴充後仍須**正常重啟 SillyTavern 一次**，以載入新的伺服器載入器。此後只要更新擴充並重新整理網頁，相容的伺服器插件更新會由管理員頁面自動套用，不必再次輸入指令或重啟酒館。
 
 ## 功能
 
@@ -103,7 +103,7 @@ try {
 
 需要 SillyTavern 1.14.0 或更新版本、Node.js 18 或更新版本，以及已啟用的 Server Plugins。
 
-v1.10.2 有 120 項單元／行為測試與語法檢查；另在隔離的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 環境通過 30 項管理介面及 14 項自動模式瀏覽器檢查，涵蓋桌面／手機尺寸與三語介面。伺服器安全測試亦涵蓋增量同步與完整 localStorage 特殊鍵。測試也確認同鍵快速連續變更會合併、自動下載不會在每次模型請求後重掃儲存空間，且背景工作者不可用時不會阻塞前景保存。Firefox、WebKit 與實體手機尚未驗證；既有同步功能也曾在 SillyTavern 1.18.0 測試。這些結果不代表所有模型擴充、瀏覽器及實體手機均已驗證。CI 覆蓋 Node.js 18、20、24。
+v1.11.0 有 126 項單元／行為測試與語法檢查；另在隔離的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 環境通過 30 項管理介面、14 項自動模式及 2 項更新載入器瀏覽器檢查。9 項伺服器安全檢查涵蓋帳戶隔離與 CSRF。Firefox、WebKit 與實體手機尚未驗證；既有同步功能也曾在 SillyTavern 1.18.0 測試。CI 設定覆蓋 Windows／Linux 與 Node.js 18、20、24。
 
 1.12.13 至 1.13.x 的官方原始碼雖然已具備本擴充所需 API，但尚未完成實機驗證，因此目前不列入正式支援。1.12.12 或更早版本缺少完整的工作階段期限或 CSRF 介面，不支援。
 
@@ -179,13 +179,13 @@ docker exec sillytavern sh -lc 'set -eu; for script in /home/node/app/public/scr
 docker exec sillytavern node /home/node/app/public/scripts/extensions/third-party/sillytavern-device-settings-sync/install-server-plugin.mjs /home/node/app
 ```
 
-完成後重啟 SillyTavern。伺服器插件採用連結，因此透過擴充管理器更新 GitHub 倉庫時，前端與伺服器端會一起更新；伺服器端程式變更後仍需重啟 SillyTavern。
+完成後重啟 SillyTavern。**從 1.10.2 或更舊版升至 1.11.0 也要重啟這一次**：舊伺服器沒有動態載入器，不能自行載入新程式。之後更新相容版本時，在擴充管理器更新並重新整理頁面；管理員頁面會核對安裝來源及檔案內容，然後自動套用新版伺服器插件。普通使用者只能查看狀態。若更新失敗，舊版繼續運作，可在設定選單按「重試」。更新不會因此同步或備份資料。固定載入器或 Node.js 執行環境若有不相容變更，仍會提示正常重啟。
 
 如果 `plugins/device-settings-sync` 已經是一般目錄，安裝器會拒絕覆寫。請先自行備份及移走舊目錄，再重新執行安裝器。
 
 若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，然後重新啟動 SillyTavern 伺服器；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
 
-若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。前端更新至 1.10.2 後重新整理瀏覽器。若要使用完整模式的空字串鍵同步，請將伺服器插件更新至 1.10.2 並重啟 SillyTavern。
+若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.11.0 後，先重啟一次載入新載入器；以後相容更新只需重新整理網頁。
 
 ## 使用
 
@@ -258,7 +258,8 @@ JSON 檔案／備份請求上限為 **32 MiB**，超限拒絕且不修改既有�
 - `GET /backups`：最多五份摘要，不含設定值。
 - `POST /backups`：`{ operationId, reason, archive }`；`reason` 為 `upload`、`download`、`import`、`restore` 或 `delete`。
 - `GET /backups/:id`：僅讀取目前帳戶保留中的指定快照。
-- `GET /health`：能力標記新增 `incremental-localstorage-v1`。增量自動上傳需要 1.10.0 以上伺服器插件；完整模式的空字串鍵支援則需要 1.10.2。更新伺服器插件後需重啟 SillyTavern。舊版伺服器仍可手動同步，但不支援增量自動上傳。
+- `GET /health`：提供 `runtime-reload-v1`、目前／已安裝版本、更新狀態與操作權限。頁面載入只讀取此狀態一次；不讀取同步內容。舊版缺少此能力時會提示首次重啟。
+- `POST /runtime/reload`：僅管理員通過登入及 CSRF 驗證後可呼叫；請求須帶與已安裝來源一致的內容雜湊。伺服器驗證完整檔案、建立私有程式副本、啟動新 Worker，等既有同步請求完成後才切換。失敗或等候超過 30 秒則維持舊版；不接受客戶端提供執行指令、檔案路徑或下載網址。僅保留目前及上一個成功程式副本；使用者資料格式不變。
 - `GET /incremental/state`、`GET /incremental/snapshot`：讀取伺服器版本／鍵雜湊或目前快照。`POST /incremental/commit`：帶預期版本、操作識別碼及僅變更鍵的原子提交；衝突回傳 HTTP 409，相同提交可安全重試。
 - `POST /incremental/transfers/start`、`PUT /incremental/transfers/:id/chunks/:index`、`POST /incremental/transfers/:id/finish`：大型差異分塊暫存，所有區塊收齊並通過完整性核對後才發布；未完成傳輸 24 小時後清理。
 - `GET /incremental/versions`、`GET /incremental/versions/:id`、`POST /incremental/versions/:id/restore`：列出、讀取或確認後還原最多五份伺服器版本，與本機救援備份分開。
