@@ -4,7 +4,7 @@
 
 讓同一個 SillyTavern 帳戶在手機、桌面及其他裝置之間，手動同步設定，並可選擇自動同步可攜式瀏覽器設定。
 
-目前版本：**1.10.0**。IndexedDB 只納入手動同步中明確選取的項目，不會隨 localStorage 自動同步。要使用增量 localStorage 自動保存，請更新伺服器插件至 1.10.0 並重啟 SillyTavern；前端更新後重新整理瀏覽器即可。舊版自動上傳會先關閉，需重新確認才能啟用新版。
+目前版本：**1.10.1**。IndexedDB 只納入手動同步中明確選取的項目，不會隨 localStorage 自動同步。增量 localStorage 自動保存需要 1.10.0 伺服器插件；若尚未安裝過該版伺服器插件，更新後需重啟 SillyTavern。更新前端擴充後重新整理瀏覽器即可。
 
 ## 功能
 
@@ -55,7 +55,7 @@
 
 兩個開關預設**關閉**，啟用前會確認。偏好依網站、登入帳戶及瀏覽器保存，不會同步到其他裝置。舊版自動上傳設定升級後會關閉，重新確認後才使用新機制。
 
-- **自動上傳**：瀏覽器原生通知發生 localStorage 變更後，先只記下鍵名；同鍵連續修改會合併，停止變更 2 秒後整理一批，最長合併 15 秒，兩批至少間隔 5 秒。只讀取、雜湊和傳送改過的鍵，不再等待模型請求閒置 15 分鐘，也不定時掃描整份 localStorage。雜湊與大型值差分在 Web Worker 執行。
+- **自動上傳**：瀏覽器原生通知發生 localStorage 變更後，先只記下鍵名；同鍵連續修改會合併，停止變更 10 秒後整理一批，最長合併 15 秒，兩批至少間隔 30 秒。只讀取、雜湊和傳送改過的鍵，不定時掃描整份 localStorage。雜湊與大型值差分在 Web Worker 執行。模型請求或其他同步操作進行中時會延後傳送。
 - **自動下載**：維持獨立開關；新頁面開啟或手動重新整理時檢查，不因切回分頁而下載。只有伺服器單獨變更才套用，本機單獨變更保留；真正套用後會重新載入一次。
 - **兩者皆開**：各自運作，共用帳戶鎖；模型請求、其他分頁或實際資料操作尚未結束時延後。
 - **衝突**：本機與伺服器同時修改同一鍵、首次沒有共同基準，或伺服器版本在提交前改變時，會停下來詢問，不會直接覆蓋另一台裝置的更新。
@@ -103,7 +103,7 @@ try {
 
 需要 SillyTavern 1.14.0 或更新版本、Node.js 18 或更新版本，以及已啟用的 Server Plugins。
 
-v1.10.0 的 119 項單元／行為測試與語法檢查通過；另在隔離的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 環境通過 30 項管理介面及 14 項自動模式瀏覽器檢查，涵蓋桌面／手機尺寸與三語介面。測試也確認同鍵快速連續變更會合併、自動下載不會在每次模型請求後重掃儲存空間，且背景工作者不可用時不會阻塞前景保存。Firefox、WebKit 與實體手機尚未驗證；既有同步功能也曾在 SillyTavern 1.18.0 測試。這些結果不代表所有模型擴充、瀏覽器及實體手機均已驗證。CI 覆蓋 Node.js 18、20、24。
+v1.10.1 有 120 項單元／行為測試與語法檢查；另在隔離的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 環境通過 30 項管理介面及 14 項自動模式瀏覽器檢查，涵蓋桌面／手機尺寸與三語介面。測試也確認同鍵快速連續變更會合併、自動下載不會在每次模型請求後重掃儲存空間，且背景工作者不可用時不會阻塞前景保存。Firefox、WebKit 與實體手機尚未驗證；既有同步功能也曾在 SillyTavern 1.18.0 測試。這些結果不代表所有模型擴充、瀏覽器及實體手機均已驗證。CI 覆蓋 Node.js 18、20、24。
 
 1.12.13 至 1.13.x 的官方原始碼雖然已具備本擴充所需 API，但尚未完成實機驗證，因此目前不列入正式支援。1.12.12 或更早版本缺少完整的工作階段期限或 CSRF 介面，不支援。
 
@@ -185,7 +185,7 @@ docker exec sillytavern node /home/node/app/public/scripts/extensions/third-part
 
 若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，然後重新啟動 SillyTavern 伺服器；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
 
-若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.10.0 後重新啟動伺服器插件。
+若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。前端更新至 1.10.1 後重新整理瀏覽器；伺服器插件至少需要 1.10.0。
 
 ## 使用
 
@@ -258,7 +258,7 @@ JSON 檔案／備份請求上限為 **32 MiB**，超限拒絕且不修改既有�
 - `GET /backups`：最多五份摘要，不含設定值。
 - `POST /backups`：`{ operationId, reason, archive }`；`reason` 為 `upload`、`download`、`import`、`restore` 或 `delete`。
 - `GET /backups/:id`：僅讀取目前帳戶保留中的指定快照。
-- `GET /health`：能力標記新增 `incremental-localstorage-v1`。啟用 v1.10.0 自動上傳也需要 1.10.0 伺服器插件並重啟；舊版仍可手動同步，但新自動上傳會停用。
+- `GET /health`：能力標記新增 `incremental-localstorage-v1`。啟用 v1.10.1 自動上傳需要 1.10.0 伺服器插件；若尚未安裝／更新伺服器插件，更新後需重啟 SillyTavern。舊版伺服器仍可手動同步，但不支援新自動上傳。
 - `GET /incremental/state`、`GET /incremental/snapshot`：讀取伺服器版本／鍵雜湊或目前快照。`POST /incremental/commit`：帶預期版本、操作識別碼及僅變更鍵的原子提交；衝突回傳 HTTP 409，相同提交可安全重試。
 - `POST /incremental/transfers/start`、`PUT /incremental/transfers/:id/chunks/:index`、`POST /incremental/transfers/:id/finish`：大型差異分塊暫存，所有區塊收齊並通過完整性核對後才發布；未完成傳輸 24 小時後清理。
 - `GET /incremental/versions`、`GET /incremental/versions/:id`、`POST /incremental/versions/:id/restore`：列出、讀取或確認後還原最多五份伺服器版本，與本機救援備份分開。

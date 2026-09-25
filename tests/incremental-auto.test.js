@@ -52,17 +52,17 @@ function reconciliationFixture({ prefs, local, baseline, remote, oldRevision = 1
     return { instance, applied, get savedRows() { return savedRows; }, get queued() { return queued; }, snapshot };
 }
 
-test('native change notifications only coalesce key names and debounce for two seconds', () => {
+test('native change notifications only coalesce key names and debounce for ten seconds', () => {
     const clock = new FakeClock();
     const instance = scheduler(clock);
     instance.noteKey('extension:theme');
     assert.deepEqual([...instance.dirty], ['extension:theme']);
-    assert.equal(clock.timers.get(instance.timer).delay, 2000);
+    assert.equal(clock.timers.get(instance.timer).delay, 10_000);
     assert.equal(clock.timers.get(instance.maxTimer).delay, 15000);
     clock.now += 250;
     instance.noteKey('extension:theme');
     assert.deepEqual([...instance.dirty], ['extension:theme']);
-    assert.equal(clock.timers.get(instance.timer).delay, 2000);
+    assert.equal(clock.timers.get(instance.timer).delay, 10_000);
     assert.equal(clock.timers.get(instance.maxTimer).delay, 15000);
 });
 
@@ -75,7 +75,7 @@ test('one thousand writes to one key remain one dirty item without reading its v
     for (let index = 0; index < 1000; index++) instance.noteKey('extension:rapid-change');
     assert.deepEqual([...instance.dirty], ['extension:rapid-change']);
     assert.equal(reads, 0);
-    assert.equal(clock.timers.get(instance.timer).delay, 2000);
+    assert.equal(clock.timers.get(instance.timer).delay, 10_000);
     assert.equal(clock.timers.get(instance.maxTimer).delay, 15000);
 });
 
@@ -84,12 +84,28 @@ test('maximum merge time and minimum batch gap bound work without scanning idle 
     const instance = scheduler(clock);
     instance.lastBatchStart = clock.now - 1000;
     instance.noteKey('extension:a');
-    assert.equal(clock.timers.get(instance.timer).delay, 4000);
+    assert.equal(clock.timers.get(instance.timer).delay, 29_000);
     assert.equal(clock.timers.get(instance.maxTimer).delay, 15000);
     instance.noteKey('extension:b');
     assert.deepEqual([...instance.dirty].sort(), ['extension:a', 'extension:b']);
-    assert.equal(clock.timers.get(instance.timer).delay, 4000);
+    assert.equal(clock.timers.get(instance.timer).delay, 29_000);
     assert.equal(clock.timers.get(instance.maxTimer).delay, 15000);
+});
+
+test('a ready batch still waits until thirty seconds have elapsed since the prior batch', async () => {
+    const clock = new FakeClock();
+    const instance = scheduler(clock);
+    let reads = 0;
+    let scheduledDelay = null;
+    instance.lastBatchStart = clock.now - 1000;
+    instance.dirty.add('extension:changed');
+    instance.localPrefs = () => ({ upload: true, paused: false });
+    instance.schedule = delay => { scheduledDelay = delay; };
+    instance.storage = { getItem() { reads++; return 'changed'; } };
+    await instance.flushDirty();
+    assert.equal(scheduledDelay, 29_000);
+    assert.equal(reads, 0);
+    assert.deepEqual([...instance.dirty], ['extension:changed']);
 });
 
 test('a change batch reads and hashes only named keys, never unrelated large localStorage values', async () => {

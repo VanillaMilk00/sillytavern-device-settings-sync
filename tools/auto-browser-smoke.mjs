@@ -40,7 +40,7 @@ try {
         return { status: response.status(), body: await response.json() };
     }
     async function waitForRemoteValue(key, value) {
-        const deadline = Date.now() + 20000;
+        const deadline = Date.now() + 45000;
         let latest;
         while (Date.now() < deadline) {
             latest = await api('/state');
@@ -148,13 +148,13 @@ try {
     const commitsBeforeUpload = traffic.filter(value => value === autoCommitRoute).length;
     const changedAt = Date.now();
     await page.evaluate(() => localStorage.setItem('auto:theme', 'event-upload'));
-    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.status === 'autoConfirmed', null, { timeout: 15000 }).catch(async error => {
+    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.status === 'autoConfirmed', null, { timeout: 30000 }).catch(async error => {
         console.error('Automatic save diagnostics:', await page.evaluate(() => ({ automatic: DeviceSettingsSync.getDiagnostics().automatic,
             value: localStorage.getItem('auto:theme') })));
         throw error;
     });
     const elapsed = Date.now() - changedAt;
-    assert.ok(elapsed >= 1800 && elapsed < 15000, 'automatic save should follow the short coalescing window, not a 15-minute timer');
+    assert.ok(elapsed >= 9800 && elapsed < 30000, 'automatic save should begin after the ten-second quiet period');
     assert.equal((await api('/state')).body.entries['auto:theme'].value, 'event-upload');
     assert.equal(traffic.filter(value => value === autoCommitRoute).length, commitsBeforeUpload + 1,
         'expected one incremental request: ' + JSON.stringify(incrementalCommits));
@@ -171,15 +171,16 @@ try {
         const response = await fetch('/api/plugins/device-settings-sync/state', { cache: 'no-store' });
         const state = await response.json();
         return state.entries['auto:theme-direct']?.deleted === true;
-    }, null, { timeout: 20000 });
+    }, null, { timeout: 45000 });
     pass('direct property assignment and removal produce exact key updates and a server tombstone');
 
+    await page.waitForFunction(() => Date.now() - DeviceSettingsSync.getDiagnostics().automatic.lastConfirmedAt >= 30000, null, { timeout: 35000 });
     const other = await context.newPage(); await ready(other);
     await other.evaluate(() => { globalThis.qaActive = DeviceSettingsSync.beginModelActivity(); });
     await other.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active > 0);
     const commitsBefore = traffic.filter(value => value === autoCommitRoute).length;
     await page.evaluate(() => localStorage.setItem('auto:theme', 'two-tabs'));
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(12000);
     assert.equal(traffic.filter(value => value === autoCommitRoute).length, commitsBefore, 'an active generation must hold the shared sync lock');
     await other.evaluate(() => DeviceSettingsSync.endModelActivity(globalThis.qaActive));
     await waitForRemoteValue('auto:theme', 'two-tabs');

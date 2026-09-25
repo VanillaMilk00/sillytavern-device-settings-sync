@@ -6,7 +6,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "VanillaMilk00",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "minimum_client_version": "1.14.0",
   "i18n": {
     "zh-cn": "locales/zh-cn.json",

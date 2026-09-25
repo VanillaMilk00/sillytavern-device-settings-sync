@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.10.1 - 2026-09-26
+
+### 繁體中文
+
+- 降低自動上傳頻率：停止變更 10 秒後才整理批次，兩批至少間隔 30 秒；模型請求或其他同步操作仍未結束時會繼續等待。
+- 僅前端排程調整，伺服器插件維持 1.10.0，不需要為此版本單獨重啟伺服器。
+
+### 简体中文
+
+- 降低自动上传频率：停止变化 10 秒后才整理批次，两个批次至少间隔 30 秒；模型请求或其他同步操作尚未结束时仍会继续等待。
+- 仅调整前端调度，服务器插件仍为 1.10.0，不需要为此版本单独重启服务器。
+
+### English
+
+- Reduce automatic-upload frequency: prepare a batch after 10 seconds without changes and start batches at least 30 seconds apart. Model requests and other sync operations still block transfers until they finish.
+- This is a frontend scheduling update only. Server plugin 1.10.0 remains compatible and does not need a separate restart for this release.
+
 ## 1.10.0 - 2026-09-25
 
 ### 繁體中文

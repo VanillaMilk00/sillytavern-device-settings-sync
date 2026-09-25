@@ -4,7 +4,7 @@
 
 Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.10.0**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. Update the server plugin to 1.10.0 and restart SillyTavern for incremental localStorage sync; refresh the browser for the frontend update. Existing automatic-upload consent is disabled on upgrade and must be confirmed again.
+Version **1.10.1**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. Incremental localStorage autosave requires server plugin 1.10.0; if it is not installed yet, restart SillyTavern after installing it. Refresh the browser after updating the frontend extension.
 
 ## Features
 
@@ -47,7 +47,7 @@ After enabling IndexedDB manual sync in Settings and selecting a scope, both dir
 
 Both switches default **off** and require confirmation. Preferences belong to this website, account and browser, and are not copied to other devices. The previous idle-timer upload consent is disabled during upgrade; confirm again to enable the new behavior.
 
-- **Automatic upload:** native localStorage notifications first record only changed key names. Repeated edits to the same key are coalesced; a batch is prepared after 2 seconds without changes, at most 15 seconds of changes are merged, and batches start at least 5 seconds apart. Only changed keys are read, hashed and sent. There is no 15-minute model-idle timer or periodic full scan. Hashing and large-value diffing run in a Web Worker.
+- **Automatic upload:** native localStorage notifications first record only changed key names. Repeated edits to the same key are coalesced; a batch is prepared after 10 seconds without changes, at most 15 seconds of changes are merged, and batches start at least 30 seconds apart. Only changed keys are read, hashed and sent; there is no periodic full scan. Hashing and large-value diffing run in a Web Worker. Transfers wait for model requests and other sync operations to finish.
 - **Automatic download:** remains an independent switch. It checks on a new page or manual reload, not when switching tabs. Remote-only changes are applied, local-only changes are retained, and a successful apply reloads once.
 - **Both:** operate independently and share an account lock. Active model requests, another tab or a real data operation defer the upload.
 - **Conflicts:** simultaneous changes to the same key, unequal first-run data without a baseline, or a server version change before commit stop for a decision instead of overwriting another device.
@@ -75,7 +75,7 @@ Preferences, baselines and scheduling are internal data: excluded from ordinary 
 
 ## Installation and upgrade
 
-Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. All 119 v1.10.0 Node unit/behavior tests and syntax checks pass. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium also passed 30 management checks and 14 automatic-mode checks, including desktop/mobile-sized viewports and all three languages. Tests verify repeated edits to one key are coalesced, automatic download does not rescan storage after every model request, and unavailable Background Sync cannot block foreground saves. Firefox, WebKit and physical mobile devices have not been tested. Earlier sync versions were also tested on SillyTavern 1.18.0; these results do not establish compatibility with every model extension, host version or browser. CI covers Node.js 18, 20 and 24.
+Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. All 120 v1.10.1 Node unit/behavior tests and syntax checks pass. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium also passed 30 management checks and 14 automatic-mode checks, including desktop/mobile-sized viewports and all three languages. Tests verify repeated edits to one key are coalesced, automatic download does not rescan storage after every model request, and unavailable Background Sync cannot block foreground saves. Firefox, WebKit and physical mobile devices have not been tested. Earlier sync versions were also tested on SillyTavern 1.18.0; these results do not establish compatibility with every model extension, host version or browser. CI covers Node.js 18, 20 and 24.
 
 1. In Extensions → Install extension, enter:
 
@@ -184,7 +184,7 @@ All APIs use SillyTavern session authentication and CSRF protection. Under `/api
 - `GET /backups`: up to five summaries, without values.
 - `POST /backups`: `{ operationId, reason, archive }`; reasons are `upload`, `download`, `import`, `restore`, `delete`.
 - `GET /backups/:id`: a retained backup belonging to the current account.
-- `GET /health`: adds the `incremental-localstorage-v1` capability. Automatic uploads in v1.10.0 require server plugin 1.10.0 and a restart; manual sync remains available with an older plugin.
+- `GET /health`: adds the `incremental-localstorage-v1` capability. v1.10.1 automatic uploads require server plugin 1.10.0; install/update that plugin and restart SillyTavern if it is not already available. Manual sync remains available with an older plugin.
 - `GET /incremental/state`, `GET /incremental/snapshot`: read the server revision/key hashes or a snapshot. `POST /incremental/commit`: atomically submit changed keys with an expected revision and operation ID; conflicts return HTTP 409 and identical retries are safe.
 - `POST /incremental/transfers/start`, `PUT /incremental/transfers/:id/chunks/:index`, `POST /incremental/transfers/:id/finish`: stage large differences in chunks and publish only after all chunks pass integrity checks. Incomplete transfers expire after 24 hours.
 - `GET /incremental/versions`, `GET /incremental/versions/:id`, `POST /incremental/versions/:id/restore`: list, read or restore—after confirmation—up to five server versions, separate from local rescue backups.
