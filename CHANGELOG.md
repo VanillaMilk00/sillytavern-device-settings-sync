@@ -1,5 +1,22 @@
 # Changelog
 
+## 未發布 / Unreleased
+
+### 繁體中文
+
+- 修正自動上傳在酒館生成事件重複開始、只結束一次時，可能留下活動鎖，導致待傳變更過了預計時間仍無法上傳。
+- 一般模型請求仍等傳輸結束；暫時被操作擋住的變更會重新排程，避免漏掉結束通知後永久停滯。
+
+### 简体中文
+
+- 修复自动上传在酒馆生成事件重复开始、只结束一次时可能留下活动锁，导致待传更改超过预计时间仍无法上传。
+- 普通模型请求仍等待传输结束；暂时被操作阻挡的更改会重新安排，避免错过结束通知后永久停滞。
+
+### English
+
+- Fix automatic uploads getting stuck behind a phantom activity lock when SillyTavern emits multiple generation starts but one end event.
+- Standalone model requests still wait for transfer completion; changes deferred by another operation are rescheduled instead of relying on a single completion notification.
+
 ## 1.12.0 - 2026-09-27
 
 ### 繁體中文

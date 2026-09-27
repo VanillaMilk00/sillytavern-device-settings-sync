@@ -134,6 +134,37 @@ test('a change batch reads and hashes only named keys, never unrelated large loc
     assert.equal(queued[0].value, 'new');
 });
 
+test('a missed operation-completion handoff cannot strand dirty keys past the displayed due time', async () => {
+    const clock = new FakeClock();
+    const instance = scheduler(clock);
+    let busy = true;
+    const reads = [];
+    instance.dirty.add('extension:changed');
+    instance.localPrefs = () => ({ upload: true, paused: false });
+    instance.api = { busy: () => busy };
+    instance.withLock = work => work();
+    instance.notify = async () => {};
+    instance.storage = { getItem(key) { reads.push(key); return 'new'; } };
+    instance.options = () => ({ fullStorage: true });
+    instance.openJournal = async () => ({
+        getBaseline: async () => ({ localHash: 'old', hash: 'old', value: 'old' }),
+        queue: async () => {},
+    });
+    instance.hashes = { hash: async () => ({ hash: 'new' }) };
+    instance.processQueueLocked = async () => {};
+    await instance.flushDirty();
+    assert.deepEqual([...instance.dirty], ['extension:changed']);
+    assert.equal(clock.timers.get(instance.timer).delay, 5000);
+    assert.equal(instance.nextAttemptAt, clock.now + 5000);
+    assert.deepEqual(reads, []);
+    busy = false;
+    clock.now += 5000;
+    await clock.timers.get(instance.timer).callback();
+    assert.deepEqual([...instance.dirty], []);
+    assert.deepEqual(reads, ['extension:changed']);
+    assert.equal(instance.nextAttemptAt, 0);
+});
+
 test('upload-only reconciliation retains a changed remote key as a conflict baseline', async () => {
     const instance = Object.create(IncrementalAutoSync.prototype);
     const previousHash = 'hash:previous';

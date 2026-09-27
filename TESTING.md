@@ -7,9 +7,9 @@ npm test
 npm run check
 ```
 
-v1.12.0 has **130 passing Node unit/behavior tests** and a passing syntax and release-manifest check. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium passed **30 management, 15 automatic-mode, 2 runtime-update browser and 10 server-security checks**. Runtime tests cover dependency replacement, incomplete/tampered/broken candidates, duplicate reloads, request draining/timeouts and snapshot retention. Firefox, WebKit, physical mobile devices and the full CI platform matrix were not tested locally; mobile coverage uses a browser viewport.
+The current unreleased fix has **138 passing Node unit/behavior tests**, a passing syntax and release-manifest check, and **16 automatic-mode browser checks** on an isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium. The additional checks cover duplicate generation starts, a single host end event, streaming completion and recovery of deferred dirty keys. The v1.12.0 release separately passed **130 Node tests**, **30 management, 15 automatic-mode, 2 runtime-update browser and 10 server-security checks**. Firefox, WebKit, physical mobile devices and the full CI platform matrix were not tested locally; mobile coverage uses a browser viewport.
 
-v1.12.0 目前有 **130 項 Node.js 單元／行為測試全數通過**、語法及發布清單檢查通過，並已在 SillyTavern 1.14.0、Node.js 22 的隔離環境完成 Edge Chromium 驗收：管理介面 **30 項**、自動模式 **15 項**、熱更新 **2 項**及伺服器安全 **10 項**。熱更新測試涵蓋相依程式替換、殘缺／竄改／損壞候選版本、重複更新、請求排空／逾時及程式副本保留。Firefox、WebKit、實體手機及完整 CI 平台矩陣尚未於本機驗證。
+目前未發布的修正有 **138 項 Node.js 單元／行為測試全數通過**、語法及發布清單檢查通過，並已在 SillyTavern 1.14.0、Node.js 22 的隔離環境完成 Edge Chromium 自動模式 **16 項**驗收；新增覆蓋重複生成開始、單次結束事件、串流結束及延後變更的重新排程。原 v1.12.0 發布版另完成 **130 項** Node 測試，以及管理介面 **30 項**、自動模式 **15 項**、熱更新 **2 項**及伺服器安全 **10 項**。Firefox、WebKit、實體手機及完整 CI 平台矩陣尚未於本機驗證。
 
 保留原有 20 項測試，加入備份與資料操作案例。測試以暫存資料夾或記憶體 Storage 執行，不操作日常帳戶。CI 執行 Node.js 18、20、24。
 

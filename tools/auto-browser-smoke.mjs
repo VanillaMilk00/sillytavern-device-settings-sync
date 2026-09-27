@@ -146,10 +146,39 @@ try {
     await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active === 0);
     pass('native generation cancellation and duplicate end events do not leave phantom activity');
 
+    await page.evaluate(async () => {
+        const { eventSource, event_types } = await import('/script.js');
+        await eventSource.emit(event_types.GENERATION_STARTED, 'normal', {}, false);
+        await eventSource.emit(event_types.GENERATION_STARTED, 'normal', {}, false);
+    });
+    assert.equal(await page.evaluate(() => DeviceSettingsSync.getDiagnostics().automatic.active), 1);
+    await page.evaluate(async () => {
+        const { eventSource, event_types } = await import('/script.js');
+        await eventSource.emit(event_types.GENERATION_ENDED);
+    });
+    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active === 0);
+    pass('two host start events followed by one stop-button end event release the generation lock');
+
     const autoCommitRoute = 'POST ' + base + '/incremental/commit';
     const commitsBeforeUpload = traffic.filter(value => value === autoCommitRoute).length;
+    await page.evaluate(async () => {
+        const { eventSource, event_types } = await import('/script.js');
+        await eventSource.emit(event_types.GENERATION_STARTED, 'normal', {}, false);
+    });
+    await page.evaluate(url => {
+        globalThis.qaNativeFetch = fetch(url + '/v1/chat/completions', { method: 'POST' }).then(response => response.text());
+    }, modelUrl);
+    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active === 1);
     const changedAt = Date.now();
     await page.evaluate(() => localStorage.setItem('auto:theme', 'event-upload'));
+    await page.evaluate(() => globalThis.qaNativeFetch);
+    assert.equal(await page.evaluate(() => DeviceSettingsSync.getDiagnostics().automatic.active), 1,
+        'the native generation should be the only remaining activity lock');
+    await page.evaluate(async () => {
+        const { eventSource, event_types } = await import('/script.js');
+        await eventSource.emit(event_types.GENERATION_ENDED);
+    });
+    await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.active === 0);
     await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.status === 'autoConfirmed', null, { timeout: 30000 }).catch(async error => {
         console.error('Automatic save diagnostics:', await page.evaluate(() => ({ automatic: DeviceSettingsSync.getDiagnostics().automatic,
             value: localStorage.getItem('auto:theme') })));
@@ -170,7 +199,7 @@ try {
         .find(entry => entry.key === 'auto:theme').value, 'event-upload');
     const displayedTime = await page.evaluate(timestamp => new Date(timestamp).toLocaleString(), slotZero.createdAt);
     assert.ok((await page.locator('#dss_auto_status').textContent()).includes(displayedTime));
-    pass('native localStorage change is coalesced and confirmed by one incremental save without a local rescue upload');
+    pass('a native chat generation releases one activity lock and its localStorage change is confirmed by one incremental save');
 
     await page.evaluate(() => { void DeviceSettingsSync.openManager('serverVersions'); });
     const slotCard = page.locator('dialog[open] .dss_backup_card').first();
