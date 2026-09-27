@@ -9,13 +9,20 @@
     resize: vertical;
 }
 
-#device_settings_sync_panel .dss_manual_notice {
+#device_settings_sync_panel .dss_manual_notice,
+#device_settings_sync_panel .dss_data_notice {
     padding: 10px;
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 8px;
     background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 80%, transparent);
     line-height: 1.45;
 }
+
+#device_settings_sync_panel .dss_data_notice { min-width: 0; overflow-wrap: anywhere; }
+#device_settings_sync_panel .dss_data_notice p { margin: 8px 0; }
+#device_settings_sync_panel .dss_data_notice summary { cursor: pointer; }
+#device_settings_sync_panel .dss_data_notice summary:focus-visible { outline: 2px solid var(--SmartThemeQuoteColor, #e4aa68); outline-offset: 2px; }
+#device_settings_sync_panel .dss_data_notice .dss_source_links { font-size: .85em; }
 
 #device_settings_sync_panel .dss_actions {
     display: flex;

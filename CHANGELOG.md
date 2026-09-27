@@ -4,18 +4,21 @@
 
 ### 繁體中文
 
+- 新增面板資料傳送說明、實際伺服器目的地、請求網域、拒絕方式及 MIT 授權連結。三語同步確認、備份說明與 README 明確告知：一般模式也可能同步憑證；完整救援備份上傳至目前酒館伺服器，不受同步範圍或排除規則限制。
 - 將容易誤認為插件版本的「伺服器版本」入口改名為「localStorage 同步歷史」，並說明其資料範圍。
 - 修正自動上傳在酒館生成事件重複開始、只結束一次時，可能留下活動鎖，導致待傳變更過了預計時間仍無法上傳。
 - 一般模型請求仍等傳輸結束；暫時被操作擋住的變更會重新排程，避免漏掉結束通知後永久停滯。
 
 ### 简体中文
 
+- 新增面板数据传送说明、实际服务器目标、请求域名、拒绝方式和 MIT 许可链接。三语同步确认、备份说明和 README 明确告知：普通模式也可能同步凭证；完整救援备份上传至当前酒馆服务器，不受同步范围或排除规则限制。
 - 将容易误认为插件版本的“服务器版本”入口更名为“localStorage 同步历史”，并说明数据范围。
 - 修复自动上传在酒馆生成事件重复开始、只结束一次时可能留下活动锁，导致待传更改超过预计时间仍无法上传。
 - 普通模型请求仍等待传输结束；暂时被操作阻挡的更改会重新安排，避免错过结束通知后永久停滞。
 
 ### English
 
+- Add a panel disclosure showing the server destination, request domains, opt-out options and MIT license links. Clarify in all three languages that portable sync can include credentials and complete rescue backups are uploaded to this SillyTavern server regardless of sync selections or exclusions.
 - Rename the easily confused “Server versions” entry to “localStorage sync history” and clarify its data scope.
 - Fix automatic uploads getting stuck behind a phantom activity lock when SillyTavern emits multiple generation starts but one end event.
 - Standalone model requests still wait for transfer completion; changes deferred by another operation are rescheduled instead of relying on a single completion notification.

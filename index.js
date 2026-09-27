@@ -1001,9 +1001,22 @@ function createPanel() {
             <div class="inline-drawer-content">
                 <div class="dss_manual_notice">
                     <b data-i18n="dss.panel.manualHeading">Manual mode</b><br>
-                    <span data-i18n="dss.panel.manualNotice">No settings are synced, polled, or monitored when the page loads. The extension connects only when you use a sync button below.</span>
+                    <span data-i18n="dss.panel.manualNotice">Automatic upload and download are off. Loading this page checks the server plugin version and lets administrators apply compatible updates; it does not transfer sync data or create backups.</span>
                 </div>
                 <small data-i18n="dss.panel.description">Upload local settings first saves SillyTavern account and extension settings; Sync from server reloads the page after syncing. Both actions include the selected localStorage range. Selected IndexedDB records are included only when enabled in Settings. localStorage may contain credentials; HttpOnly login cookies cannot be synchronized.</small>
+                <section class="dss_data_notice" aria-labelledby="dss_data_notice_title">
+                    <strong id="dss_data_notice_title" data-i18n="dss.panel.dataNoticeTitle">Data transfer disclosure</strong>
+                    <p data-i18n="dss.panel.dataNoticeSummary">Portable, selected and full modes can all send credentials. Before manual sync or applying an automatic download, the complete localStorage is backed up to this SillyTavern server, including unselected or excluded keys.</p>
+                    <details>
+                        <summary data-i18n="dss.panel.dataNoticeDetails">Data scope, request domains and opt-out options</summary>
+                        <p><span data-i18n="dss.panel.dataNoticeDestination">Sync and backup destination (this SillyTavern server):</span> <code id="dss_data_origin"></code></p>
+                        <p data-i18n="dss.panel.dataNoticeStorage">Your signed-in account stores sync data, backups and metadata such as source website, device identifier and operation time. Server files are not additionally encrypted and may be accessible to the server administrator. Use a server you trust.</p>
+                        <p data-i18n="dss.panel.dataNoticeNetwork">Sync, backup and backend version requests go only to this SillyTavern website. SillyTavern connects to github.com to install or update code. No additional data is sent to the author, advertising or usage analytics services.</p>
+                        <p data-i18n="dss.panel.dataNoticeControls">Automatic upload, automatic download and manual IndexedDB sync default off on a fresh installation and can be turned off separately in Settings. Manual actions can be cancelled at confirmation. Sync selections and exclusions do not limit complete rescue backups; decline sync and turn off automatic features if you do not accept them. Already-sent requests may complete, and turning features off does not delete existing server data.</p>
+                        <p data-i18n="dss.panel.dataNoticeManagement">Complete server backups before import, restore or removal default on and can be turned off in Settings. Depending on the operation, they include all localStorage or all user IndexedDB data. Batch cleanup always backs up complete localStorage first; cancel that operation to decline.</p>
+                        <p class="dss_source_links"><span>Copyright &copy; 2026 VanillaMilk00</span> · <a href="https://github.com/VanillaMilk00/sillytavern-device-settings-sync" target="_blank" rel="noopener noreferrer" data-i18n="dss.panel.sourceLink">Complete source code</a> · <a href="https://github.com/VanillaMilk00/sillytavern-device-settings-sync/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" data-i18n="dss.panel.licenseLink">MIT license</a></p>
+                    </details>
+                </section>
                 <button id="dss_settings_toggle" class="menu_button" type="button" aria-expanded="false" aria-controls="dss_settings_menu" data-i18n="dss.manager.settingsTitle">Settings</button>
                 <div id="dss_settings_menu" hidden>
                     <div id="dss_auto"></div>
@@ -1019,7 +1032,8 @@ function createPanel() {
                     <label class="dss_check"><input id="dss_indexeddb_enabled" type="checkbox"><span data-i18n="dss.manager.indexedDbEnable">Enable IndexedDB synchronization</span></label>
                     <small data-i18n="dss.manager.indexedDbManualOnly">Manual sync includes only databases, stores or records selected in Manage IndexedDB. Automatic localStorage sync never reads or uploads IndexedDB.</small>
                     <small data-i18n="dss.manager.indexedDbHint">Merge-only; local-only records are preserved. 128 MiB per archive using 1 MiB chunks.</small>
-                    <label class="dss_check"><input id="dss_before_changes" type="checkbox"><span data-i18n="dss.manager.beforeChanges">Also back up before import, restore or removal</span></label>
+                    <label class="dss_check"><input id="dss_before_changes" type="checkbox"><span data-i18n="dss.manager.beforeChanges">Back up complete data to the server before import, restore or removal</span></label>
+                    <small data-i18n="dss.manager.beforeChangesHint">Enabled by default. This uploads all localStorage or all user IndexedDB data, depending on the operation, including unselected data and any credentials. Turning it off does not disable required backups before sync or batch cleanup.</small>
                     <label for="dss_excludes" data-i18n="dss.panel.excludesLabel">Additional localStorage keys to exclude (one per line; * wildcards supported)</label>
                     <textarea id="dss_excludes" rows="3" placeholder="example-cache:*" data-i18n="[placeholder]dss.panel.excludesPlaceholder"></textarea>
                 </div>
@@ -1036,6 +1050,7 @@ function createPanel() {
                 <pre id="dss_status"></pre>
             </div>
         </div>`;
+    panel.querySelector('#dss_data_origin').textContent = location.origin;
     container.append(panel);
     bindPanel();
     renderRuntimeStatus();

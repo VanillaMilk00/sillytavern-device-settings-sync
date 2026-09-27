@@ -283,7 +283,8 @@ export async function openStorageManager(api, { initialTab = 'local' } = {}) {
             finally { updateCapacity(); }
         })));
     root.append(heading, capacityPanel, element('p', msg('estimateNote'), 'dss_note'),
-        element('p', msg('extensionHint'), 'dss_note'), setting.root, tabs, status, reload, content);
+        element('p', msg('extensionHint'), 'dss_note'), setting.root,
+        element('p', msg('beforeChangesHint'), 'dss_note'), tabs, status, reload, content);
 
     function updateCapacity() {
         const values = readStorage(localStorage);

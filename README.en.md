@@ -6,6 +6,17 @@ Manually synchronize settings between devices using the same SillyTavern account
 
 Version **1.12.0**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. The first upgrade from 1.10.2 still requires **one normal SillyTavern restart** to load the new server bootstrap. After that, update the extension and refresh the page: an administrator's page automatically applies compatible server-plugin updates without another command or restart.
 
+## Data transfer, request domains and opt-out options
+
+- **Data and destination:** The selected localStorage range and separately enabled, selected user IndexedDB data are stored under the signed-in account on this SillyTavern server. Sync and backup metadata includes the source website, device identifier and operation time. Server files are not additionally encrypted and may be accessible to the server administrator. Use a server you trust.
+- **Credentials and complete backups:** Portable, selected and full modes can all include API keys or sign-in credentials. Before manual sync or applying an automatic download, **complete localStorage** is uploaded to this SillyTavern server as a rescue backup, including unselected or excluded keys, even with automatic upload off. Automatic uploads instead preserve previous server sync data in separate sync history.
+- **IndexedDB and management operations:** Manual IndexedDB sync sends only the selected scope and its rescue backup. Pre-change backups for import, restore and removal default on; they upload complete localStorage or all user IndexedDB data, depending on the operation, including any unselected personal data and credentials. This setting can be turned off. Batch cleanup always requires a complete localStorage backup.
+- **Declining or disabling:** Automatic upload, automatic download and manual IndexedDB sync default off on a fresh installation and can be disabled separately in Settings. Manual actions can be cancelled at confirmation. Decline sync and turn off automatic features if you do not accept the complete rescue backup; sync selections and exclusions do not narrow it. Already-sent requests may complete, and disabling features does not delete existing server data.
+- **Request domains:** Sync, backup and backend version checks use only the current SillyTavern website through same-origin endpoints. SillyTavern connects to `github.com` to install or update code. The extension sends no additional data to the author, advertising or usage analytics services. Model activity monitoring only delays sync and does not read model prompts, response bodies or credentials.
+- **Source and license:** The frontend, server plugin, Workers and installer are publicly available in this repository under the [MIT license](LICENSE), Copyright © 2026 VanillaMilk00.
+
+The extension panel shows the actual sync destination and displays a data-transfer notice before the sync buttons. Even with automatic sync disabled, loading a page checks the backend version once and an administrator can apply compatible plugin updates; this does not transfer sync content or create backups.
+
 ## Features
 
 - Manual upload/download with confirmation. With both automatic switches off (the default), loading a page does not synchronize, poll or create backups.
@@ -21,7 +32,7 @@ Version **1.12.0**. IndexedDB is included only in manual sync for explicitly sel
 
 Open **Settings** in the extension panel to adjust automatic upload/download, backups before changes, additional exclusions and the localStorage sync range. Range preferences are stored locally per site, account and device; they are not copied to other devices.
 
-- **Portable settings** (default): existing cache, history, large-value, credential and custom-exclusion rules apply.
+- **Portable settings** (default): excludes matching cache/history keys, image/Blob values, large values, internal sync keys and custom exclusions. **Credentials are not categorically excluded:** API keys and sign-in tokens can sync if no other exclusion matches.
 - **Selected keys/folders only:** in Manage localStorage, select entries or a folder and choose **Use selection as sync range**. Explicitly selected cache, history and large values are included; internal sync keys always remain excluded. Downloads affect only that range.
 - **All localStorage:** synchronize every non-internal key, including caches, history, drafts, large values and possibly credentials.
 
