@@ -20,7 +20,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.11.0';
+const VERSION = '1.12.0';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -619,6 +619,7 @@ async function showManager(initialTab = 'local') {
             listBackups: () => request('/backups'),
             getBackup: id => request('/backups/' + encodeURIComponent(id)),
             listServerVersions: mode => request(`/incremental/versions?mode=${encodeURIComponent(mode)}`),
+            getAutomaticUploadSlot: mode => request(`/incremental/auto-upload?mode=${encodeURIComponent(mode)}`),
             getServerVersion: (id, mode) => request(`/incremental/versions/${encodeURIComponent(id)}?mode=${encodeURIComponent(mode)}`),
             restoreServerVersion: (id, mode) => coordinated(async () => {
                 const state = await request(`/incremental/state?mode=${encodeURIComponent(mode)}`);
@@ -1083,7 +1084,8 @@ function renderAuto(state) {
         input.disabled = !state.supported;
     }
     root.querySelector('#dss_auto_status').textContent = msg(state.status) + '\n' + msg('autoDetails', {
-        count: state.pending, last: state.lastConfirmedAt ? new Date(state.lastConfirmedAt).toLocaleString() : '—',
+        count: state.pending, dirty: state.dirty,
+        last: state.lastConfirmedAt ? new Date(state.lastConfirmedAt).toLocaleString() : '—',
         due: state.due ? new Date(state.due).toLocaleString() : '—',
     }) + (state.error ? '\n' + errorText({ code: state.error, message: state.error }) : '')
         + (state.errorDetail ? '\n' + state.errorDetail : '');

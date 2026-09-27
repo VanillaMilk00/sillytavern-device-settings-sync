@@ -40,7 +40,7 @@ export function applyIncrementalDelta(before, delta) {
 }
 
 function initialManifest() {
-    return { schema: 1, revision: 0, seeded: false, updatedAt: '', settingsEpoch: 0, settingsDeviceId: '', settingsChangeId: '', entries: Object.create(null), receipts: [], autoBackupRound: null };
+    return { schema: 1, revision: 0, seeded: false, updatedAt: '', settingsEpoch: 0, settingsDeviceId: '', settingsChangeId: '', entries: Object.create(null), receipts: [], autoBackupRound: null, lastAutomaticUpload: null };
 }
 
 function normalizeManifest(value) {
@@ -283,8 +283,26 @@ export class IncrementalStateStore {
         const next = { ...manifest, schema: 1, revision, seeded: true, updatedAt: timestamp, entries: nextEntries,
             receipts: [...manifest.receipts, receipt].slice(-RECEIPT_LIMIT),
             autoBackupRound: automatic ? backup?.round || manifest.autoBackupRound : null };
-        if (backup?.publish) await this.publishServerVersion(backup.record, { prune: false });
-        await this.writeManifest(next);
+        const automaticSlot = automatic && validated.length ? {
+            id: randomUUID(), operationId: input.operationId, createdAt: timestamp, source: { deviceId: input.deviceId },
+            mode, revision, keys: Object.values(nextEntries).filter(item => !item.deleted).length,
+            bytes: Object.values(nextEntries).reduce((sum, item) => sum + (item.deleted ? 0 : Number(item.bytes) || 0), 0),
+        } : null;
+        if (automaticSlot) {
+            await this.atomicWrite(path.join(this.versionsDirectory, automaticSlot.id + '.json'),
+                JSON.stringify({ schema: 1, revision, entries: nextEntries }));
+            next.lastAutomaticUpload = automaticSlot;
+        }
+        try {
+            if (backup?.publish) await this.publishServerVersion(backup.record, { prune: false });
+            await this.writeManifest(next);
+        } catch (error) {
+            if (automaticSlot) await fs.unlink(path.join(this.versionsDirectory, automaticSlot.id + '.json')).catch(() => {});
+            throw error;
+        }
+        if (automaticSlot && manifest.lastAutomaticUpload?.id) {
+            await fs.unlink(path.join(this.versionsDirectory, manifest.lastAutomaticUpload.id + '.json')).catch(() => {});
+        }
         if (backup?.publish) await this.pruneServerVersions();
         return { ...receipt, replayed: false };
     }
@@ -375,13 +393,17 @@ export class IncrementalStateStore {
 
     async listVersions() { return (await this.readVersionsIndex()).records; }
 
+    async automaticUploadSlot() { return (await this.readManifest()).lastAutomaticUpload || null; }
+
     async getVersion(id) {
-        if (!/^[0-9a-f-]{36}$/iu.test(id || '')) throw new StorageError('incrementalVersionNotFound');
+        const automatic = id === 'auto-latest' ? await this.automaticUploadSlot() : null;
+        const actualId = automatic?.id || id;
+        if (!/^[0-9a-f-]{36}$/iu.test(actualId || '')) throw new StorageError('incrementalVersionNotFound');
         try {
-            const manifest = normalizeManifest(JSON.parse(await fs.readFile(path.join(this.versionsDirectory, id + '.json'), 'utf8')));
+            const manifest = normalizeManifest(JSON.parse(await fs.readFile(path.join(this.versionsDirectory, actualId + '.json'), 'utf8')));
             const entries = [];
             for (const [key, item] of Object.entries(manifest.entries)) if (!item.deleted) entries.push({ key, value: await this.readValue(item.hash) });
-            const record = (await this.readVersionsIndex()).records.find(item => item.id === id);
+            const record = automatic || (await this.readVersionsIndex()).records.find(item => item.id === actualId);
             return { format: 'sillytavern-localstorage-backup', version: 1, createdAt: record?.createdAt || '',
                 source: record?.source || { deviceId: '' }, scope: { kind: 'full' }, entries, revision: manifest.revision };
         } catch (error) { if (error.code === 'ENOENT') throw new StorageError('incrementalVersionNotFound'); throw error; }

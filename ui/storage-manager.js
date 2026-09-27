@@ -500,15 +500,18 @@ export async function openStorageManager(api, { initialTab = 'local' } = {}) {
             content.append(element('p', msg('serverVersionsHelp')), element('p', msg('credentialsNote'), 'dss_note'));
             const options = api.filterOptions();
             const mode = options.fullStorage ? 'full' : options.selectedScope ? 'selected' : 'portable';
-            const records = await api.listServerVersions(mode);
+            const [automaticSlot, records] = await Promise.all([
+                api.getAutomaticUploadSlot(mode), api.listServerVersions(mode),
+            ]);
             if (disposed || generation !== viewGeneration) return;
-            if (!records.length) content.append(element('p', msg('serverVersionsEmpty')));
-            for (let index = 0; index < 5; index++) {
-                const record = records[index];
+            const renderVersionCard = (record, number, automatic = false) => {
                 const card = element('section', undefined, 'dss_backup_card');
-                card.append(element('h4', msg('slot', { number: index + 1 })));
+                card.append(element('h4', automatic ? msg('automaticUploadSlot') : msg('slot', { number })));
                 if (!record) card.append(element('p', msg('backupEmpty')));
                 else {
+                    if (automatic) card.append(element('p', msg('automaticUploadLastSuccess', {
+                        date: new Date(record.createdAt).toLocaleString(),
+                    }), 'dss_note'));
                     card.append(element('p', msg('serverVersionMeta', {
                         date: new Date(record.createdAt).toLocaleString(),
                         device: record.source?.deviceId?.slice(-8) || msg('unknownDevice'),
@@ -517,7 +520,7 @@ export async function openStorageManager(api, { initialTab = 'local' } = {}) {
                         revision: record.revision,
                     })));
                     const actions = element('div', undefined, 'dss_toolbar');
-                    const readVersion = () => api.getServerVersion(record.id, mode);
+                    const readVersion = () => api.getServerVersion(automatic ? 'auto-latest' : record.id, mode);
                     actions.append(
                         button(msg('browse'), () => guard(async () => {
                             const archive = await readVersion();
@@ -534,7 +537,7 @@ export async function openStorageManager(api, { initialTab = 'local' } = {}) {
                                 okButton: msg('restoreToServer'), cancelButton: msg('cancel'), allowVerticalScrolling: true,
                             }).show();
                             if (accepted !== POPUP_RESULT.AFFIRMATIVE) return;
-                            await api.restoreServerVersion(record.id, mode);
+                            await api.restoreServerVersion(automatic ? 'auto-latest' : record.id, mode);
                             status.classList.remove('dss_error');
                             status.textContent = msg('serverVersionRestoreSuccess');
                             await showTab('serverVersions');
@@ -542,7 +545,10 @@ export async function openStorageManager(api, { initialTab = 'local' } = {}) {
                     card.append(actions);
                 }
                 content.append(card);
-            }
+            };
+            renderVersionCard(automaticSlot, 0, true);
+            if (!records.length) content.append(element('p', msg('serverVersionsEmpty')));
+            for (let index = 0; index < 5; index++) renderVersionCard(records[index], index + 1);
             return;
         }
         content.append(element('p', msg('backupHelp')), element('p', msg('credentialsNote'), 'dss_note'));

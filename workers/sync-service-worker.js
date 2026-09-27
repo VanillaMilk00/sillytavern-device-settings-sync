@@ -60,10 +60,11 @@ async function runSync(databaseName, account) {
                     if (await scopedReader.getMeta('uploadEnabled') !== true) return;
                     const headers = await freshHeaders(batch);
                     const receipt = await fetchCommit(batch, headers);
-                    await scopedReader.confirmBatch(batch, receipt.revision);
+                    const confirmedAt = Number.isFinite(Date.parse(receipt.createdAt)) ? Date.parse(receipt.createdAt) : Date.now();
+                    await scopedReader.confirmBatch(batch, receipt.revision, confirmedAt);
                     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
                     for (const client of clients) client.postMessage({ type: 'dss-auto-confirmed', account,
-                        mode: batch.payload.mode, revision: receipt.revision, confirmedAt: Date.now() });
+                        mode: batch.payload.mode, revision: receipt.revision, confirmedAt });
                 } catch { return; }
             }
         } finally { database.close(); }

@@ -4,7 +4,7 @@
 
 Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.11.0**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. The first upgrade from 1.10.2 still requires **one normal SillyTavern restart** to load the new server bootstrap. After that, update the extension and refresh the page: an administrator's page automatically applies compatible server-plugin updates without another command or restart.
+Version **1.12.0**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. The first upgrade from 1.10.2 still requires **one normal SillyTavern restart** to load the new server bootstrap. After that, update the extension and refresh the page: an administrator's page automatically applies compatible server-plugin updates without another command or restart.
 
 ## Features
 
@@ -52,7 +52,9 @@ Both switches default **off** and require confirmation. Preferences belong to th
 - **Both:** operate independently and share an account lock. Active model requests, another tab or a real data operation defer the upload.
 - **Conflicts:** simultaneous changes to the same key, unequal first-run data without a baseline, or a server version change before commit stop for a decision instead of overwriting another device.
 
-Changes are first stored in a private browser IndexedDB queue. A save is complete only after server confirmation. The server stores immutable key/value content, atomically publishes a version manifest and uses retry receipts, so commits contain only differences. Up to five server versions are retained; automatic saves from the same device and scope merge for 30 minutes. Manual commits start a separate version. The manager's **Server versions** tab can browse, export and restore a version after confirmation.
+Changes are first stored in a private browser IndexedDB queue. A save is complete only after server confirmation. The server stores immutable key/value content, atomically publishes a version manifest and uses retry receipts, so commits contain only differences. **Slot 0** in **Server versions** independently holds the server snapshot after the latest successful automatic upload; another successful automatic upload replaces it, but a manual upload does not. The original slots 1–5 still preserve pre-change versions, with automatic saves from the same device and scope merging for 30 minutes. Every slot can be browsed, exported or restored to the server after confirmation.
+
+The panel also shows this browser's last **server-confirmed automatic upload** time, changes not yet queued and queued keys. Slot 0 shows the latest successful automatic upload for the account and current server data stream (portable is separate from the shared selected/full stream). A queued-key count of zero alone does not prove an upload succeeded; a change may not have been observed yet.
 
 When a page closes normally, it makes a best-effort attempt to send an already-prepared commit no larger than 48 KiB. Browsers with Background Sync may also retry in the background. Neither is a delivery guarantee: power loss, force-closing, or a last-moment edit not yet prepared may require reopening the original browser. Offline work remains in that browser's queue. Queue quota, observer failure or expired login pauses upload explicitly; queued does not mean saved.
 
@@ -75,7 +77,7 @@ Preferences, baselines and scheduling are internal data: excluded from ordinary 
 
 ## Installation and upgrade
 
-Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. All 127 v1.11.0 Node unit/behavior tests and syntax checks pass. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium passed 30 management, 14 automatic-mode and 2 runtime-update browser checks, plus 9 server-security checks. Firefox, WebKit and physical mobile devices have not been tested. Earlier sync versions were also tested on SillyTavern 1.18.0; these results do not establish compatibility with every model extension, host version or browser. CI is configured for Windows/Linux and Node.js 18, 20 and 24.
+Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. All 130 v1.12.0 Node unit/behavior tests and syntax checks pass. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium passed 30 management, 15 automatic-mode and 2 runtime-update browser checks, plus 10 server-security checks. Firefox, WebKit and physical mobile devices have not been tested. Earlier sync versions were also tested on SillyTavern 1.18.0; these results do not establish compatibility with every model extension, host version or browser. CI is configured for Windows/Linux and Node.js 18, 20 and 24.
 
 1. In Extensions → Install extension, enter:
 
@@ -188,7 +190,8 @@ All APIs use SillyTavern session authentication and CSRF protection. Under `/api
 - `POST /runtime/reload`: administrator, login and CSRF protected, and requires the expected installed content hash. The server verifies all source files, stages a private copy and starts a new Worker before waiting for accepted requests to finish. Failure or a 30-second drain timeout leaves the old runtime active. The client cannot supply commands, paths or download URLs. Only the current and previous successful program snapshots are retained; user data formats do not change.
 - `GET /incremental/state`, `GET /incremental/snapshot`: read the server revision/key hashes or a snapshot. `POST /incremental/commit`: atomically submit changed keys with an expected revision and operation ID; conflicts return HTTP 409 and identical retries are safe.
 - `POST /incremental/transfers/start`, `PUT /incremental/transfers/:id/chunks/:index`, `POST /incremental/transfers/:id/finish`: stage large differences in chunks and publish only after all chunks pass integrity checks. Incomplete transfers expire after 24 hours.
-- `GET /incremental/versions`, `GET /incremental/versions/:id`, `POST /incremental/versions/:id/restore`: list, read or restore—after confirmation—up to five server versions, separate from local rescue backups.
+- `GET /incremental/auto-upload?mode=portable|full|selected`: metadata for slot 0 in this account and scope; `GET /incremental/versions/auto-latest` reads its archive.
+- `GET /incremental/versions`, `GET /incremental/versions/:id`, `POST /incremental/versions/:id/restore`: list, read or restore—after confirmation—server version slots 1–5 and slot 0, separate from local rescue backups.
 - `POST /commit`: `{ operationId, expectedRevision, deviceId, mutations }`, validated completely before an atomic write. Version or operation-ID conflicts return HTTP 409; identical retries are idempotent.
 - `GET /commits/:id`: account-private receipt recovery for lost responses. Receipts and values are written together and count toward the existing 5 MiB state limit. Existing per-value limits and manual APIs remain compatible.
 - `GET /full-state`, `POST /full-commit`, `GET /full-commits/:id`: separate full snapshot, atomic versioned commit and retry receipt, limited to 32 MiB JSON. These are separate from regular sync and the five rescue backups.

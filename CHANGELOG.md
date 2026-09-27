@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.12.0 - 2026-09-27
+
+### 繁體中文
+
+- 「伺服器版本」新增獨立插槽 0，保存最近一次成功自動上傳**後**的伺服器快照；後續自動上傳會更新插槽 0，手動上傳不會覆寫，也不占原有第 1–5 格救援版本。
+- 面板顯示這台裝置最後一次經伺服器確認的自動上傳時間，並分開顯示尚未排隊的變更與待傳送鍵數；插槽 0 顯示帳戶在目前同步範圍最近一次自動上傳成功的時間。
+- 自動上傳的前景及背景收據均以伺服器回傳時間記錄成功，而不是僅以本機佇列清空推斷成功。
+
+### 简体中文
+
+- “服务器版本”新增独立插槽 0，保存最近一次成功自动上传**后**的服务器快照；后续自动上传更新插槽 0，手动上传不会覆盖，也不占原有第 1–5 格救援版本。
+- 面板显示这台设备最后一次经服务器确认的自动上传时间，并分别显示尚未入队的变更和待发送键数；插槽 0 显示账户在当前同步范围最近一次自动上传成功的时间。
+- 前台与后台自动上传均以服务器收据时间记录成功，而不是仅凭本地队列清空判断。
+
+### English
+
+- Add independent server-version slot 0 containing the server snapshot **after** the most recent successful automatic upload. Later automatic uploads replace slot 0; manual uploads do not, and slots 1–5 remain available for recovery history.
+- Show this browser's last server-confirmed automatic upload time alongside unqueued changes and queued keys. Slot 0 shows the latest successful automatic upload for the account and current sync scope.
+- Foreground and background uploads record the server receipt time, rather than treating an empty local queue as proof of success.
+
 ## 1.11.0 - 2026-09-26
 
 ### 繁體中文

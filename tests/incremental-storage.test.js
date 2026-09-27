@@ -107,6 +107,78 @@ test('automatic server versions merge for thirty minutes, then retain only the n
     });
 });
 
+test('slot 0 keeps the last successful automatic upload without using a recovery slot', async () => {
+    await withStore('full', async (root, store) => {
+        assert.equal(await store.automaticUploadSlot(), null);
+        await assert.rejects(store.getVersion('auto-latest'), error => error.code === 'incrementalVersionNotFound');
+        const firstInput = identity('auto_slot_0001', 0, [
+            { key: 'setting', beforeHash: null, afterHash: incrementalHash('first'), value: 'first' },
+        ]);
+        const first = await store.commit(firstInput, { now: new Date('2026-09-27T01:00:00.000Z') });
+        const firstSlot = await store.automaticUploadSlot();
+        assert.equal(firstSlot.createdAt, first.createdAt);
+        assert.equal(firstSlot.revision, 1);
+        assert.equal(firstSlot.keys, 1);
+        assert.equal((await store.getVersion('auto-latest')).entries[0].value, 'first');
+        assert.equal((await store.listVersions()).length, 1);
+        assert.deepEqual(await store.commit(firstInput), { ...first, replayed: true });
+        assert.deepEqual(await store.automaticUploadSlot(), firstSlot);
+
+        await store.commit(identity('auto_slot_0002', 1, [
+            { key: 'setting', beforeHash: incrementalHash('first'), afterHash: incrementalHash('second'), value: 'second' },
+        ]), { now: new Date('2026-09-27T01:05:00.000Z') });
+        const secondSlot = await store.automaticUploadSlot();
+        assert.notEqual(secondSlot.id, firstSlot.id);
+        assert.equal(secondSlot.createdAt, '2026-09-27T01:05:00.000Z');
+        assert.equal((await store.getVersion('auto-latest')).entries[0].value, 'second');
+        assert.equal((await store.listVersions()).length, 1);
+        await assert.rejects(fs.stat(path.join(root, 'device-settings-sync-server-versions/full', firstSlot.id + '.json')),
+            error => error.code === 'ENOENT');
+
+        await store.commit(identity('manual_slot_0003', 2, [
+            { key: 'setting', beforeHash: incrementalHash('second'), afterHash: incrementalHash('manual'), value: 'manual' },
+        ], { automatic: false }), { automatic: false, forceVersion: true, now: new Date('2026-09-27T02:00:00.000Z') });
+        assert.deepEqual(await store.automaticUploadSlot(), secondSlot);
+        assert.equal((await store.getVersion('auto-latest')).entries[0].value, 'second');
+        assert.equal((await store.snapshot()).entries.setting.value, 'manual');
+        assert.equal((await store.listVersions()).length, 2);
+    });
+});
+
+test('a failed automatic commit does not publish or replace slot 0', async () => {
+    await withStore('full', async (root, store) => {
+        await store.commit(identity('auto_fail_seed', 0, [
+            { key: 'setting', beforeHash: null, afterHash: incrementalHash('safe'), value: 'safe' },
+        ]));
+        const slot = await store.automaticUploadSlot();
+        const originalWrite = store.writeManifest.bind(store);
+        store.writeManifest = async () => { throw new Error('injected manifest failure'); };
+        await assert.rejects(store.commit(identity('auto_fail_next', 1, [
+            { key: 'setting', beforeHash: incrementalHash('safe'), afterHash: incrementalHash('unsafe'), value: 'unsafe' },
+        ])), /injected manifest failure/u);
+        store.writeManifest = originalWrite;
+        assert.deepEqual(await store.automaticUploadSlot(), slot);
+        assert.equal((await store.getVersion('auto-latest')).entries[0].value, 'safe');
+        assert.equal((await store.snapshot()).entries.setting.value, 'safe');
+        assert.ok((await fs.stat(path.join(root, 'device-settings-sync-server-versions/full', slot.id + '.json'))).isFile());
+    });
+});
+
+test('portable and full automatic uploads keep independent slot 0 snapshots', async () => {
+    await withStore('portable', async (root, portable) => {
+        const full = new IncrementalStateStore(root, 'full');
+        await portable.commit(identity('portable_slot_0001', 0, [
+            { key: 'qa:theme', beforeHash: null, afterHash: incrementalHash('portable'), value: 'portable' },
+        ], { mode: 'portable', scope: { mode: 'portable' } }));
+        await full.commit(identity('full_slot_0001', 0, [
+            { key: 'qa:theme', beforeHash: null, afterHash: incrementalHash('full'), value: 'full' },
+        ]));
+        assert.notEqual((await portable.automaticUploadSlot()).id, (await full.automaticUploadSlot()).id);
+        assert.equal((await portable.getVersion('auto-latest')).entries[0].value, 'portable');
+        assert.equal((await full.getVersion('auto-latest')).entries[0].value, 'full');
+    });
+});
+
 test('legacy state migrates to immutable content storage without deleting the source file', async () => {
     await withStore('portable', async (root, store) => {
         const legacyPath = path.join(root, 'device-settings-sync.json');

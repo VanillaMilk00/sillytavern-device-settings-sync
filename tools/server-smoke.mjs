@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createArchive, MAX_ARCHIVE_BYTES } from '../lib/storage-model.js';
+import { incrementalHash } from '../server-plugin/incremental.js';
 
 const url = new URL(process.env.DSS_QA_URL || 'http://127.0.0.1:18765');
 assert.equal(process.env.DSS_QA_ALLOW_MUTATION, '1', 'Set DSS_QA_ALLOW_MUTATION=1 only for an isolated test account');
@@ -104,5 +105,22 @@ try {
     })).status(), 400);
     assert.deepEqual(await (await other.context.get(base + '/full-state')).json(), fullState);
     pass('full snapshots keep large values, receipt replay and account isolation without partial writes');
+    assert.equal((await anonymous.context.get(base + '/incremental/auto-upload?mode=full')).status(), 403);
+    const adminSlotBefore = await (await admin.context.get(base + '/incremental/auto-upload?mode=full')).json();
+    assert.equal(await (await other.context.get(base + '/incremental/auto-upload?mode=full')).json(), null);
+    const slotPayload = { account: handle, operationId: 'slot0_' + Date.now(), deviceId: 'qa_slot_device',
+        expectedRevision: fullReceipt.revision, mode: 'full', automatic: true, scope: { mode: 'full' },
+        mutations: [{ key: 'slot0:private', beforeHash: null, afterHash: incrementalHash('account-only'), value: 'account-only' }] };
+    const slotReceiptResponse = await other.post(base + '/incremental/commit', slotPayload);
+    assert.equal(slotReceiptResponse.status(), 200);
+    const slotReceipt = await slotReceiptResponse.json();
+    const otherSlot = await (await other.context.get(base + '/incremental/auto-upload?mode=full')).json();
+    assert.equal(otherSlot.revision, slotReceipt.revision);
+    assert.equal(otherSlot.createdAt, slotReceipt.createdAt);
+    assert.equal((await (await other.context.get(base + '/incremental/versions/auto-latest?mode=full')).json()).entries
+        .find(entry => entry.key === 'slot0:private').value, 'account-only');
+    assert.deepEqual(await (await admin.context.get(base + '/incremental/auto-upload?mode=full')).json(), adminSlotBefore);
+    assert.equal((await admin.context.get(base + '/incremental/versions/' + otherSlot.id + '?mode=full')).status(), 404);
+    pass('automatic-upload slot 0 requires login and remains isolated between accounts');
     console.log('Completed ' + passed + ' server security checks. Disposable account: ' + handle);
 } finally { await Promise.all(contexts.map(context => context.dispose())); }

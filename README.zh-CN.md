@@ -4,7 +4,7 @@
 
 让同一个 SillyTavern 账户在手机、桌面及其他设备之间手动同步设置，并可选择自动同步可移植浏览器设置。
 
-当前版本：**1.11.0**。IndexedDB 只会把明确选中的项目纳入手动同步，不会随 localStorage 自动同步。首次从 1.10.2 升级后仍须**正常重启 SillyTavern 一次**，让新的服务器加载器生效。以后更新兼容版本时，在酒馆更新扩展并刷新页面，管理员页面会自动应用新版服务器插件，不用再输入命令或重启酒馆。
+当前版本：**1.12.0**。IndexedDB 只会把明确选中的项目纳入手动同步，不会随 localStorage 自动同步。首次从 1.10.2 升级后仍须**正常重启 SillyTavern 一次**，让新的服务器加载器生效。以后更新兼容版本时，在酒馆更新扩展并刷新页面，管理员页面会自动应用新版服务器插件，不用再输入命令或重启酒馆。
 
 ## 功能
 
@@ -52,7 +52,9 @@
 - **同时开启**：分别运行，共享账户锁；模型请求、其他标签页或实际数据操作未完成时延后上传。
 - **冲突**：同一键双方都改动、首次无基准且数据不同，或提交前服务器版本变化时会停下询问，不会直接覆盖另一设备的数据。
 
-变更先保存在浏览器专用 IndexedDB 队列，再送往服务器。只有服务器确认后才算保存完成。服务器以不可变键值内容和原子版本清单保存差异，并用收据处理重试。最多保留五份服务器版本；同一设备、范围内 30 分钟的自动保存合并成一份，管理器可浏览、导出及确认后还原。
+变更先保存在浏览器专用 IndexedDB 队列，再送往服务器。只有服务器确认后才算保存完成。服务器以不可变键值内容和原子版本清单保存差异，并用收据处理重试。“服务器版本”的**插槽 0**单独保存最近一次成功自动上传后的服务器快照，下次成功自动上传会替换它；手动上传不会覆盖。原有第 1–5 格继续保存变更前的版本，同一设备、范围内 30 分钟的自动保存合并成一格。所有插槽均可浏览、导出及确认后还原。
+
+面板另显示这台设备最后一次**经服务器确认的自动上传成功**时间、尚未入队的变更数及待发送键数；插槽 0 显示同一账户在当前数据流最近一次自动上传成功的时间（普通数据流与选中／完整共用数据流分开）。仅看到“待发送键数：0”不能证明上传成功，也可能还没有发现变更。
 
 正常关页时会尽力发送已经准备好且不超过 48 KiB 的提交；支持 Background Sync 的浏览器还会尝试后台续传，但不能保证一定完成。断电、强制关闭或最后瞬间尚未整理的变更，可能要重新打开原浏览器后补传。离线队列留在原浏览器；配额不足、观察器失效或登录过期时会明确暂停，不会把“已排队”显示成“已保存”。
 
@@ -75,7 +77,7 @@ try {
 
 ## 安装与升级
 
-需要 SillyTavern 1.14.0+、Node.js 18+，并启用 Server Plugins。v1.11.0 的 127 项单元／行为测试及语法检查通过；在隔离的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 环境，还通过 30 项管理界面、14 项自动模式、2 项热更新浏览器检查，以及 9 项服务器安全检查。Firefox、WebKit 和实体手机尚未验证；旧版同步功能也曾在 SillyTavern 1.18.0 测试。CI 配置覆盖 Windows／Linux 与 Node.js 18、20、24。
+需要 SillyTavern 1.14.0+、Node.js 18+，并启用 Server Plugins。v1.12.0 的 130 项单元／行为测试及语法检查通过；在隔离的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 环境，还通过 30 项管理界面、15 项自动模式、2 项热更新浏览器检查，以及 10 项服务器安全检查。Firefox、WebKit 和实体手机尚未验证；旧版同步功能也曾在 SillyTavern 1.18.0 测试。CI 配置覆盖 Windows／Linux 与 Node.js 18、20、24。
 
 1. 在「扩展 → 安装扩展」中输入：
 
@@ -188,7 +190,8 @@ JSON 文件／备份请求限制 **32 MiB**，超限拒绝且不修改原数据�
 - `POST /runtime/reload`：仅管理员通过登录与 CSRF 验证后可调用，并须提供与安装来源一致的内容哈希。服务器核对全部文件、建立私有程序副本并启动新 Worker，等既有同步请求完成后切换。失败或等待超过 30 秒时仍运行旧版；客户端不能指定命令、路径或下载地址。仅保留当前和上一个成功的程序副本，用户数据格式不变。
 - `GET /incremental/state`、`GET /incremental/snapshot`：读取版本／键哈希或当前快照。`POST /incremental/commit`：带预期版本、操作标识及仅变更键的原子提交；冲突返回 HTTP 409，同一提交可安全重试。
 - `POST /incremental/transfers/start`、`PUT /incremental/transfers/:id/chunks/:index`、`POST /incremental/transfers/:id/finish`：对大型差异分块暂存；全部收齐并通过完整性核验后才会发布，未完成传输 24 小时后清理。
-- `GET /incremental/versions`、`GET /incremental/versions/:id`、`POST /incremental/versions/:id/restore`：列出、读取或确认后还原最多五份服务器版本，与本机救援备份分开保存。
+- `GET /incremental/auto-upload?mode=portable|full|selected`：读取该账户和范围的插槽 0 摘要；`GET /incremental/versions/auto-latest` 读取插槽内容。
+- `GET /incremental/versions`、`GET /incremental/versions/:id`、`POST /incremental/versions/:id/restore`：列出、读取或确认后还原第 1–5 格服务器版本及插槽 0，与本机救援备份分开保存。
 - `POST /commit`：`{ operationId, expectedRevision, deviceId, mutations }`，完整验证后原子写入，版本或操作标识冲突返回 HTTP 409；相同请求重试不重复应用。
 - `GET /commits/:id`：当前账户的提交收据，用于恢复丢失响应。收据与数据同时写入，计入既有 5 MiB 同步文件上限；单值限制与手动 API 保持兼容。
 - `GET /full-state`、`POST /full-commit`、`GET /full-commits/:id`：独立的完整快照、原子版本提交和重试收据；上限 32 MiB JSON，与普通同步和五格救援备份分开。

@@ -4,7 +4,7 @@
 
 讓同一個 SillyTavern 帳戶在手機、桌面及其他裝置之間，手動同步設定，並可選擇自動同步可攜式瀏覽器設定。
 
-目前版本：**1.11.0**。IndexedDB 只納入手動同步中明確選取的項目，不會隨 localStorage 自動同步。首次從 1.10.2 升級時，更新擴充後仍須**正常重啟 SillyTavern 一次**，以載入新的伺服器載入器。此後只要更新擴充並重新整理網頁，相容的伺服器插件更新會由管理員頁面自動套用，不必再次輸入指令或重啟酒館。
+目前版本：**1.12.0**。IndexedDB 只納入手動同步中明確選取的項目，不會隨 localStorage 自動同步。首次從 1.10.2 升級時，更新擴充後仍須**正常重啟 SillyTavern 一次**，以載入新的伺服器載入器。此後只要更新擴充並重新整理網頁，相容的伺服器插件更新會由管理員頁面自動套用，不必再次輸入指令或重啟酒館。
 
 ## 功能
 
@@ -60,7 +60,9 @@
 - **兩者皆開**：各自運作，共用帳戶鎖；模型請求、其他分頁或實際資料操作尚未結束時延後。
 - **衝突**：本機與伺服器同時修改同一鍵、首次沒有共同基準，或伺服器版本在提交前改變時，會停下來詢問，不會直接覆蓋另一台裝置的更新。
 
-變更先寫入瀏覽器專用的 IndexedDB 佇列，再送往伺服器。只有收到伺服器確認才算保存完成；伺服器使用不可變鍵值內容、原子版本清單和重試收據，只提交差異。自動上傳最多保留五份伺服器版本，同一裝置與同步範圍在 30 分鐘內合併一份；手動提交會另開新版本。管理視窗的「伺服器版本」可瀏覽、匯出及確認後還原。
+變更先寫入瀏覽器專用的 IndexedDB 佇列，再送往伺服器。只有收到伺服器確認才算保存完成；伺服器使用不可變鍵值內容、原子版本清單和重試收據，只提交差異。「伺服器版本」的**插槽 0**獨立保存最近一次成功自動上傳後的伺服器快照，下一次成功自動上傳會取代它；手動上傳不會覆寫。原有第 1–5 格仍保存變更前的版本，同一裝置與同步範圍在 30 分鐘內的自動保存會合併成一格。插槽 0 和第 1–5 格均可瀏覽、匯出及確認後還原。
+
+面板另顯示這台裝置最後一次**伺服器確認自動上傳成功**的時間、尚未排隊的變更數和待傳送鍵數；插槽 0 顯示同一帳戶在目前資料流最近一次成功自動上傳的時間（一般資料流與選取／完整共用資料流分開）。單看「待傳送鍵數：0」不能判定資料已上傳成功，可能只是尚未偵測到變更。
 
 正常關頁時會盡力送出已準備好且不超過 48 KiB 的提交；支援 Background Sync 的瀏覽器也會嘗試在背景續傳。這些機制都不是完成保證：斷電、強制關閉，或最後瞬間尚未整理成佇列的變更，可能要重新開啟原瀏覽器後才補傳。離線資料會留在該瀏覽器；佇列滿、觀測失效或登入過期時會明確暫停，不把「已排隊」冒充「已保存」。
 
@@ -103,7 +105,7 @@ try {
 
 需要 SillyTavern 1.14.0 或更新版本、Node.js 18 或更新版本，以及已啟用的 Server Plugins。
 
-v1.11.0 有 127 項單元／行為測試與語法檢查；另在隔離的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 環境通過 30 項管理介面、14 項自動模式及 2 項更新載入器瀏覽器檢查。9 項伺服器安全檢查涵蓋帳戶隔離與 CSRF。Firefox、WebKit 與實體手機尚未驗證；既有同步功能也曾在 SillyTavern 1.18.0 測試。CI 設定覆蓋 Windows／Linux 與 Node.js 18、20、24。
+v1.12.0 有 130 項單元／行為測試與語法檢查；另在隔離的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 環境通過 30 項管理介面、15 項自動模式及 2 項更新載入器瀏覽器檢查。10 項伺服器安全檢查涵蓋帳戶隔離與 CSRF。Firefox、WebKit 與實體手機尚未驗證；既有同步功能也曾在 SillyTavern 1.18.0 測試。CI 設定覆蓋 Windows／Linux 與 Node.js 18、20、24。
 
 1.12.13 至 1.13.x 的官方原始碼雖然已具備本擴充所需 API，但尚未完成實機驗證，因此目前不列入正式支援。1.12.12 或更早版本缺少完整的工作階段期限或 CSRF 介面，不支援。
 
@@ -185,7 +187,7 @@ docker exec sillytavern node /home/node/app/public/scripts/extensions/third-part
 
 若按同步按鈕顯示 HTTP 404，代表前端擴充已載入，但 server plugin 尚未掛載。請檢查安裝指令是否輸出 `Linked server plugin` 或 `Server plugin link is already correct`，然後重新啟動 SillyTavern 伺服器；不要忽略 `Cannot find module` 或「找不到擴充」錯誤。
 
-若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。更新至 1.11.0 後，先重啟一次載入新載入器；以後相容更新只需重新整理網頁。
+若出現 `Directory already exists at public/scripts/extensions/third-party/sillytavern-device-settings-sync`，代表已安裝前端擴充，請在擴充管理器選擇**更新**，不要重複安裝或直接刪除既有目錄。從 1.10.2 或更舊版更新後，先重啟一次載入新載入器；已使用 1.11.0 載入器者，相容更新只需重新整理網頁。
 
 ## 使用
 
@@ -262,7 +264,8 @@ JSON 檔案／備份請求上限為 **32 MiB**，超限拒絕且不修改既有�
 - `POST /runtime/reload`：僅管理員通過登入及 CSRF 驗證後可呼叫；請求須帶與已安裝來源一致的內容雜湊。伺服器驗證完整檔案、建立私有程式副本、啟動新 Worker，等既有同步請求完成後才切換。失敗或等候超過 30 秒則維持舊版；不接受客戶端提供執行指令、檔案路徑或下載網址。僅保留目前及上一個成功程式副本；使用者資料格式不變。
 - `GET /incremental/state`、`GET /incremental/snapshot`：讀取伺服器版本／鍵雜湊或目前快照。`POST /incremental/commit`：帶預期版本、操作識別碼及僅變更鍵的原子提交；衝突回傳 HTTP 409，相同提交可安全重試。
 - `POST /incremental/transfers/start`、`PUT /incremental/transfers/:id/chunks/:index`、`POST /incremental/transfers/:id/finish`：大型差異分塊暫存，所有區塊收齊並通過完整性核對後才發布；未完成傳輸 24 小時後清理。
-- `GET /incremental/versions`、`GET /incremental/versions/:id`、`POST /incremental/versions/:id/restore`：列出、讀取或確認後還原最多五份伺服器版本，與本機救援備份分開。
+- `GET /incremental/auto-upload?mode=portable|full|selected`：讀取帳戶在該同步範圍的插槽 0 摘要；`GET /incremental/versions/auto-latest` 可讀取該插槽內容。
+- `GET /incremental/versions`、`GET /incremental/versions/:id`、`POST /incremental/versions/:id/restore`：列出、讀取或確認後還原第 1–5 格伺服器版本及插槽 0，與本機救援備份分開。
 - `POST /commit`：`{ operationId, expectedRevision, deviceId, mutations }`，全部驗證後原子提交；版本競爭或識別碼內容不一致回傳 HTTP 409，同識別碼重試不重複套用。
 - `GET /commits/:id`：讀取本帳戶提交收據，用於恢復遺失回應。收據與資料一同寫入，計入既有 5 MiB 同步檔上限；單值限制與手動 API 相容性不變。
 - `GET /full-state`、`POST /full-commit`、`GET /full-commits/:id`：完整模式的獨立快照、原子版本提交及重試收據；最多 32 MiB JSON，與一般同步及五格救援備份分開。

@@ -170,6 +170,14 @@ export async function init(router, { security = true } = {}) {
         } catch (error) { sendError(response, error); }
     });
 
+    router.get('/incremental/auto-upload', async (request, response) => {
+        try {
+            const root = getUserRoot(request);
+            response.set('Cache-Control', 'no-store').json(await serialize(root,
+                () => new IncrementalStateStore(root, streamForMode(request.query.mode || 'portable')).automaticUploadSlot()));
+        } catch (error) { sendError(response, error); }
+    });
+
     router.get('/incremental/versions/:id', async (request, response) => {
         try {
             const root = getUserRoot(request);
@@ -270,7 +278,7 @@ export async function init(router, { security = true } = {}) {
     });
 
     router.get('/health', (_request, response) => {
-        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.11.0', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1', 'indexeddb-scoped-download-v1', 'incremental-localstorage-v1'] });
+        response.set('Cache-Control', 'no-store').json({ ok: true, schema: 1, version: '1.12.0', capabilities: ['backups-v1', 'atomic-sync-v1', 'full-storage-v1', 'indexeddb-sync-v1', 'indexeddb-chunks-v1', 'indexeddb-scoped-download-v1', 'incremental-localstorage-v1', 'automatic-upload-slot-v1'] });
     });
 
     router.post('/indexeddb/transfers/start', async (request, response) => {

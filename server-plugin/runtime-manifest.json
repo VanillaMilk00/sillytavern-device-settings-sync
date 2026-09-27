@@ -1,10 +1,10 @@
 {
   "loaderProtocol": 1,
-  "version": "1.11.0",
+  "version": "1.12.0",
   "files": [
     {
       "path": "server-plugin/index.js",
-      "sha256": "58a72c51e7889b468b1078a16be522bfa6897afea44f16bfca48ad0874f63deb"
+      "sha256": "92587fc0b53c08d409696fdb59697a84df29ff05ceffd2621d3b8bab7670db9c"
     },
     {
       "path": "server-plugin/worker-runner.mjs",
@@ -24,7 +24,7 @@
     },
     {
       "path": "server-plugin/incremental.js",
-      "sha256": "86a135e4afe5856e44e1cfc5a5cbc01423304a80bfd7fdc269fd586e01aa711c"
+      "sha256": "a105cc9a13e9bc5b7e3076085d944c58d19abe490a209376515bae3eddaa7524"
     },
     {
       "path": "server-plugin/state.js",
@@ -43,5 +43,5 @@
       "sha256": "87566eafe7934b5b2fecb1148131c0ba73089b247198c46437bfd1aca7db8acb"
     }
   ],
-  "build": "a1c6c2f753b7444196f1c611ae8c6e1a9e934734625086a1b17a2a72c33d5b7c"
+  "build": "88a41e201f978aa9845c990d3d569ef7ba34574f44c5d7d9730b0ef09def17b5"
 }

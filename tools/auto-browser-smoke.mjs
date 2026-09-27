@@ -163,7 +163,21 @@ try {
     assert.equal(traffic.filter(value => value === 'POST ' + base + '/backups').length, 0);
     const serverVersions = (await api('/incremental/versions?mode=portable')).body;
     assert.ok(serverVersions.length > 0 && serverVersions.length <= 5, 'server keeps at most five incremental versions');
+    const slotZero = (await api('/incremental/auto-upload?mode=portable')).body;
+    assert.equal(slotZero.revision, (await api('/incremental/state?mode=portable')).body.revision);
+    assert.equal(Date.parse(slotZero.createdAt), await page.evaluate(() => DeviceSettingsSync.getDiagnostics().automatic.lastConfirmedAt));
+    assert.equal((await api('/incremental/versions/auto-latest?mode=portable')).body.entries
+        .find(entry => entry.key === 'auto:theme').value, 'event-upload');
+    const displayedTime = await page.evaluate(timestamp => new Date(timestamp).toLocaleString(), slotZero.createdAt);
+    assert.ok((await page.locator('#dss_auto_status').textContent()).includes(displayedTime));
     pass('native localStorage change is coalesced and confirmed by one incremental save without a local rescue upload');
+
+    await page.evaluate(() => { void DeviceSettingsSync.openManager('serverVersions'); });
+    const slotCard = page.locator('dialog[open] .dss_backup_card').first();
+    await slotCard.getByRole('heading', { name: 'Slot 0 · Latest automatic upload' }).waitFor();
+    assert.ok((await slotCard.textContent()).includes('Last successful automatic upload:'));
+    await page.locator('dialog[open]').last().locator('.popup-button-ok').click();
+    pass('server versions show an independent automatic-upload slot 0 and success time');
 
     await page.evaluate(() => { localStorage['auto:theme-direct'] = 'property-upload'; });
     await waitForRemoteValue('auto:theme-direct', 'property-upload');
@@ -223,6 +237,15 @@ try {
     await page.locator('#dss_auto').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, 'automatic-desktop.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
+    if (!await page.locator('#dss_settings_toggle').isVisible()) {
+        await page.locator('#extensions-settings-button .drawer-toggle').evaluate(node => node.click());
+    }
+    if (!await page.locator('#dss_settings_toggle').isVisible()) {
+        await page.locator('#device_settings_sync_panel .inline-drawer-toggle').evaluate(node => node.click());
+    }
+    if (!await page.locator('#dss_auto').isVisible()) {
+        await page.locator('#dss_settings_toggle').evaluate(node => node.click());
+    }
     await page.locator('#dss_auto').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, 'automatic-mobile.png'), fullPage: true });
     assert.deepEqual(errors, []);
