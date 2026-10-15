@@ -4,7 +4,7 @@
 
 让同一个 SillyTavern 账户在手机、桌面及其他设备之间手动同步设置，并可选择自动同步可移植浏览器设置。
 
-当前版本：**1.12.0**。IndexedDB 只会把明确选中的项目纳入手动同步，不会随 localStorage 自动同步。首次从 1.10.2 升级后仍须**正常重启 SillyTavern 一次**，让新的服务器加载器生效。以后更新兼容版本时，在酒馆更新扩展并刷新页面，管理员页面会自动应用新版服务器插件，不用再输入命令或重启酒馆。
+当前版本：**1.13.0**。IndexedDB 只会把明确选中的项目纳入手动同步，不会随 localStorage 自动同步。首次从 1.10.2 升级后仍须**正常重启 SillyTavern 一次**，让新的服务器加载器生效。以后更新兼容版本时，在酒馆更新扩展并刷新页面，管理员页面会自动应用新版服务器插件，不用再输入命令或重启酒馆。
 
 ## 数据传送、连接域名与关闭方式
 
@@ -82,13 +82,17 @@ try {
 
 首次启用、重新打开页面或改变同步范围时会分段核对一次本机与服务器基准；空闲时不扫描整份数据，也不定时发网络请求。下载仍按所选普通／全部／勾选范围处理 localStorage，IndexedDB 用户数据保持手动同步。关闭自动上传会清除尚未送出的上传队列，不会关闭自动下载。
 
-自动模式需要安全 HTTPS／localhost、Web Locks、Web Crypto、Web Worker、Resource Timing 及原生 `storage` 通知。请保持原浏览器登录；其他设备仍要手动同步或自行运行自动下载检查才能获取新数据。服务器及本机备份可能包含凭证，请妥善保护。
+HTTP 和 HTTPS 都支持手动同步。使用 HTTP（包含局域网 IP、域名和公网 IP）时，先在设置开启“允许 HTTP 自动模式”，确认传输未加密及关页限制后，再分别选择自动上传／自动同步；两个开关不会自行开启。局域网识别只用于提示环境，不限制功能。localhost 等浏览器安全环境维持标准模式。
+
+自动模式需要可用的 IndexedDB、Web Worker、Resource Timing 和原生 `storage` 通知。没有 Web Locks 时使用 IndexedDB 协调标签页；HTTP 没有 Web Crypto 时由 Worker 计算相同 SHA-256。失去协调权或无法确认其他标签页的请求已结束时会暂停。HTTP 不使用后台 Service Worker；关页小批次只尽力发送，未确认数据在下次打开时补传。请保持原浏览器登录。
+
+手动操作失败会在面板保留错误与诊断；“复制诊断”在 HTTP 无法使用剪贴板时，会提供可选择的文字及 JSON 下载。IndexedDB 手动传输也支持 HTTP 哈希后备；浏览器能力不足会在 localStorage 更改前提示。
 
 偏好、基准和排程是同步器内部数据：普通同步排除，完整本机救援备份保留，还原默认跳过。自动佇列使用独立内部 IndexedDB，不会出现在用户的 IndexedDB 管理或同步范围。
 
 ## 安装与升级
 
-需要 SillyTavern 1.14.0+、Node.js 18+，并启用 Server Plugins。v1.12.0 的 130 项单元／行为测试及语法检查通过；在隔离的 SillyTavern 1.14.0、Node.js 22、Edge Chromium 环境，还通过 30 项管理界面、15 项自动模式、2 项热更新浏览器检查，以及 10 项服务器安全检查。Firefox、WebKit 和实体手机尚未验证；旧版同步功能也曾在 SillyTavern 1.18.0 测试。CI 配置覆盖 Windows／Linux 与 Node.js 18、20、24。
+需要 SillyTavern 1.14.0+、Node.js 18+，并启用 Server Plugins。v1.13.0 的 HTTP 兼容性测试和限制见 [HTTP 验证记录](docs/HTTP_QA.md)。既有管理、自动和加载器测试保留；CI 覆盖 Windows／Linux 及 Node.js 18、20、24。实体 Android、Firefox 与 WebKit 尚未验证，不把移动端布局模拟当作实机测试。
 
 1. 在「扩展 → 安装扩展」中输入：
 

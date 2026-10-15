@@ -2,6 +2,14 @@
 
 ## 未發布 / Unreleased
 
+## 1.13.0 - 2026-10-15
+
+### HTTP 相容性 / HTTP compatibility
+
+- 繁體中文：修正 HTTP 手動同步被 Web Locks 擋住且錯誤被忽略。所有 HTTP 網址可獨立確認啟用自動模式，支援 IndexedDB 分頁租約與 Worker SHA-256 後備、手動 IndexedDB 傳輸預檢，以及剪貼簿失效時的診斷文字／JSON。HTTP 不使用背景 Service Worker，未確認資料下次開啟續傳。
+- 简体中文：修复 HTTP 手动同步被 Web Locks 阻挡且错误被忽略。所有 HTTP 地址可独立确认启用自动模式，支持 IndexedDB 标签页租约和 Worker SHA-256 后备、手动 IndexedDB 传输预检，以及剪贴板失效时的诊断文字／JSON。HTTP 不使用后台 Service Worker，未确认数据下次打开续传。
+- English: Restore manual HTTP sync and visible errors. Any HTTP origin can opt in to independent automatic directions. Add fenced IndexedDB tab leases, worker SHA-256 fallback, manual IndexedDB preflight, and selectable/downloadable diagnostics without a clipboard. HTTP does not register a background service worker; unconfirmed work resumes on reopening.
+
 ### 繁體中文
 
 - 新增面板資料傳送說明、實際伺服器目的地、請求網域、拒絕方式及 MIT 授權連結。三語同步確認、備份說明與 README 明確告知：一般模式也可能同步憑證；完整救援備份上傳至目前酒館伺服器，不受同步範圍或排除規則限制。

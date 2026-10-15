@@ -11,7 +11,8 @@ import { openStorageManager } from './ui/storage-manager.js';
 import { probeCapacity } from './lib/capacity-probe.js';
 import { IncrementalAutoSync } from './lib/incremental-auto-sync.js';
 import { IndexedDbError, snapshotIndexedDB, inspectIndexedDB, readIndexedDbStorePage, serializeIndexedDbArchive, mergeIndexedDbArchive, mergeArchiveObjects, deleteIndexedDbItems, selectIndexedDbArchive } from './lib/indexeddb-model.js';
-import { uploadIndexedDbArchive, downloadIndexedDbArchive, digestHex } from './lib/indexeddb-transfer.js';
+import { uploadIndexedDbArchive, downloadIndexedDbArchive, digestHex, preflightIndexedDbTransfer } from './lib/indexeddb-transfer.js';
+import { connectionInfo } from './lib/environment.js';
 import { AUTO_PREFIX, planRemote, sortedEntries } from './lib/auto-core.js';
 import {
     applyServerState,
@@ -20,7 +21,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.12.0';
+const VERSION = '1.13.0';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -47,6 +48,8 @@ const diagnostics = {
     lastAction: '',
     lastSyncAt: '',
     lastError: '',
+    lastErrorCode: '',
+    stage: 'initializing',
 };
 
 let operationInFlight = false;
@@ -55,6 +58,9 @@ let settingsOpen = false;
 let provisionalDeviceId;
 let automatic;
 let runtimeCheck;
+let manualConfirming = false;
+let standaloneBusy = false;
+const reportedErrors = new WeakSet();
 const runtimeStatus = { state: 'checking', error: '', canReload: false, activeBuild: '', installedBuild: '' };
 
 function renderRuntimeStatus() {
@@ -379,6 +385,8 @@ async function mutateIndexedDb(work, reason, scope = { kind: 'all' }, expectedHa
 }
 
 async function request(path, options = {}) {
+    diagnostics.stage = (options.method || 'GET') + ' ' + path.split('?')[0];
+    if (automatic?.coordinator.held) await automatic.coordinator.assertOwned();
     const response = await fetch(`${API_BASE}${path}`, {
         cache: 'no-store',
         ...options,
@@ -388,6 +396,7 @@ async function request(path, options = {}) {
         },
     });
     const body = await response.json().catch(() => ({}));
+    if (automatic?.coordinator.held) await automatic.coordinator.assertOwned();
     if (!response.ok) {
         if (body?.code) throw Object.assign(new StorageError(body.code, body.details || {}), { status: response.status });
         if (response.status === 404 && path.startsWith('/backups')) throw new StorageError('backupBackendMissing');
@@ -508,6 +517,7 @@ function restorePullResult() {
 function setOperationState(status, inFlight) {
     diagnostics.status = status;
     operationInFlight = inFlight;
+    if (!inFlight && status === 'manual-ready') { diagnostics.lastErrorCode = ''; diagnostics.stage = 'ready'; }
     automatic?.operationStateChanged(inFlight);
     for (const button of document.querySelectorAll('#device_settings_sync_panel button')) {
         button.disabled = inFlight;
@@ -546,11 +556,44 @@ async function sendBackup(body) {
 function backupCurrentStorage(reason) { return sendBackup(makeBackup(reason)); }
 
 async function coordinated(work) {
-    try { return automatic ? await automatic.withLock(work) : await work(); }
-    catch (error) {
-        if (error.code === 'operationBusy') globalThis.toastr?.warning(msg('operationBusy'));
-        throw error;
+    if (automatic) return automatic.withLock(work, { manual: true });
+    if (standaloneBusy) throw new StorageError('operationBusy');
+    standaloneBusy = true;
+    try { return await work(); } finally { standaloneBusy = false; }
+}
+
+function reportOperationError(error) {
+    if (error && typeof error === 'object') {
+        if (reportedErrors.has(error)) return;
+        reportedErrors.add(error);
     }
+    diagnostics.lastError = errorText(error);
+    diagnostics.lastErrorCode = error?.code || (error?.status ? 'HTTP_' + error.status : error?.name || 'unknown');
+    if (!operationInFlight) diagnostics.status = 'error';
+    renderStatus();
+    const notify = error?.code === 'operationBusy' ? 'warning' : 'error';
+    globalThis.toastr?.[notify]?.(diagnostics.lastError, tr('dss.panel.title', 'Device Settings Sync'));
+}
+
+async function runManualButton(action) {
+    let ownsConfirmation = false;
+    try {
+        if (manualConfirming || operationInFlight) throw new StorageError('operationBusy');
+        manualConfirming = true;
+        ownsConfirmation = true;
+        const accepted = await (action === 'pull' ? confirmManualPull() : confirmManualPush());
+        if (accepted) await (action === 'pull' ? manualPull() : manualPush());
+    } catch (error) { reportOperationError(error); }
+    finally { if (ownsConfirmation) manualConfirming = false; }
+}
+
+async function preflightManualIndexedDb() {
+    if (!indexedDbConfig().enabled) return;
+    if (!indexedDbScopeConfigured(indexedDbScope())) throw new IndexedDbError('indexedDbScopeEmpty');
+    diagnostics.stage = 'indexeddb-preflight';
+    await preflightIndexedDbTransfer();
+    const health = await request('/health');
+    if (!['indexeddb-sync-v1', 'indexeddb-chunks-v1', 'indexeddb-scoped-download-v1'].every(c => health.capabilities?.includes(c))) throw new IndexedDbError('indexedDbBackendMissing');
 }
 
 function applyLocalPlan(plan, reason, options) {
@@ -685,13 +728,15 @@ async function confirmManualPush() {
 }
 
 async function manualPull(options = {}) {
-    return coordinated(() => manualPullLocked(options));
+    try { return await coordinated(() => manualPullLocked(options)); }
+    catch (error) { reportOperationError(error); throw error; }
 }
 
 async function manualPullLocked({ reload = true } = {}) {
-    if (operationInFlight) return { ...diagnostics };
+    if (operationInFlight) throw new StorageError('operationBusy');
     setOperationState('downloading', true);
     try {
+        await preflightManualIndexedDb();
         const options = filterOptions();
         if (!options.selectedScopeConfigured) throw new StorageError('selectedScopeEmpty');
         if (options.fullStorage || options.selectedScope) await requireFullSupport();
@@ -750,12 +795,13 @@ async function manualPullLocked({ reload = true } = {}) {
     } catch (error) {
         diagnostics.lastError = errorText(error);
         setOperationState('error', false);
-        globalThis.toastr?.error(diagnostics.lastError, tr('dss.panel.title', 'Device Settings Sync'));
+        reportOperationError(error);
         throw error;
     }
 }
 
 async function applyAutomaticSnapshot(state, options, allowedKeys = null) {
+    if (automatic?.coordinator.held) await automatic.coordinator.assertOwned();
     if (operationInFlight) throw new StorageError('operationBusy');
     setOperationState('automatic-applying', true);
     try {
@@ -777,13 +823,15 @@ async function applyAutomaticSnapshot(state, options, allowedKeys = null) {
 }
 
 async function manualPush() {
-    return coordinated(manualPushLocked);
+    try { return await coordinated(manualPushLocked); }
+    catch (error) { reportOperationError(error); throw error; }
 }
 
 async function manualPushLocked() {
-    if (operationInFlight) return { ...diagnostics };
+    if (operationInFlight) throw new StorageError('operationBusy');
     setOperationState('saving', true);
     try {
+        await preflightManualIndexedDb();
         const options = filterOptions();
         if (!options.selectedScopeConfigured) throw new StorageError('selectedScopeEmpty');
         if (options.fullStorage || options.selectedScope) await requireFullSupport();
@@ -843,7 +891,7 @@ async function manualPushLocked() {
     } catch (error) {
         diagnostics.lastError = errorText(error);
         setOperationState('error', false);
-        globalThis.toastr?.error(diagnostics.lastError, tr('dss.panel.title', 'Device Settings Sync'));
+        reportOperationError(error);
         throw error;
     }
 }
@@ -966,23 +1014,44 @@ function bindPanel() {
             await automatic?.scopeChanged();
         } catch (error) { globalThis.toastr?.error(errorText(error)); }
     });
-    document.querySelector('#dss_pull')?.addEventListener('click', async () => {
-        if (await confirmManualPull()) manualPull().catch(() => {});
-    });
-    document.querySelector('#dss_push')?.addEventListener('click', async () => {
-        if (await confirmManualPush()) manualPush().catch(() => {});
-    });
+    document.querySelector('#dss_pull')?.addEventListener('click', () => runManualButton('pull'));
+    document.querySelector('#dss_push')?.addEventListener('click', () => runManualButton('push'));
     document.querySelector('#dss_manage')?.addEventListener('click', showManager);
     document.querySelector('#dss_idb_manage')?.addEventListener('click', () => showManager('indexeddb'));
     document.querySelector('#dss_reload')?.addEventListener('click', () => location.reload());
     document.querySelector('#dss_copy')?.addEventListener('click', async () => {
-        const safe = { ...diagnostics, automatic: automatic?.describe(), device: getDeviceId(false).slice(-8) };
-        await navigator.clipboard.writeText(JSON.stringify(safe, null, 2));
-        globalThis.toastr?.success(
-            tr('dss.toast.copySuccess', 'Diagnostics copied (no setting values included).'),
-            tr('dss.panel.title', 'Device Settings Sync'),
-        );
+        try { await copyDiagnostics(); } catch (error) { reportOperationError(error); }
     });
+}
+
+function collectDiagnostics() {
+    const state = automatic?.describe();
+    if (state) delete state.errorDetail;
+    return { ...diagnostics, connection: connectionInfo(window), browser: navigator.userAgent,
+        automatic: state, device: getDeviceId(false).slice(-8) };
+}
+
+async function copyDiagnostics() {
+    const text = JSON.stringify(collectDiagnostics(), null, 2);
+    try {
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+        await navigator.clipboard.writeText(text);
+        globalThis.toastr?.success(tr('dss.toast.copySuccess', 'Diagnostics copied (no setting values included).'));
+        return;
+    } catch { /* Offer visible, selectable diagnostics on HTTP or denied access. */ }
+    const root = document.createElement('div'); root.id = 'dss_diagnostics_fallback';
+    const note = document.createElement('p'); note.textContent = msg('diagnosticsFallback');
+    const area = document.createElement('textarea'); area.readOnly = true; area.value = text;
+    area.rows = 16; area.style.cssText = 'width:100%;user-select:text';
+    const download = document.createElement('button'); download.className = 'menu_button'; download.textContent = msg('diagnosticsDownload');
+    download.addEventListener('click', () => {
+        const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+        const link = document.createElement('a'); link.href = url; link.download = 'device-settings-sync-diagnostics.json'; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    root.append(note, area, download);
+    try { await new Popup(root, POPUP_TYPE.TEXT, '', { allowVerticalScrolling: true }).show(); }
+    catch { document.querySelector('#dss_diagnostics_fallback')?.remove(); document.querySelector('#device_settings_sync_panel')?.append(root); }
 }
 
 function createPanel() {
@@ -1069,7 +1138,9 @@ function renderAuto(state) {
     const notice = document.querySelector('#device_settings_sync_panel .dss_manual_notice');
     if (notice) notice.hidden = state.upload || state.download;
     if (!root.children.length) {
-        for (const [name, key] of [['upload', 'autoUpload'], ['download', 'autoDownload']]) {
+        const toggles = [['upload', 'autoUpload'], ['download', 'autoDownload']];
+        if (state.connection?.mode === 'http') toggles.unshift(['allowHttp', 'httpAutoAllow']);
+        for (const [name, key] of toggles) {
             const label = document.createElement('label');
             label.className = 'dss_check';
             const input = document.createElement('input');
@@ -1080,23 +1151,26 @@ function renderAuto(state) {
                 const checked = input.checked;
                 input.disabled = true;
                 try {
-                    if (checked && !(await confirmManualAction(msg(key), msg(name === 'upload' ? 'autoUploadConsent' : 'autoDownloadConsent'), msg(key)))) return;
+                    const consent = name === 'allowHttp' ? 'httpAutoConsent' : name === 'upload' ? 'autoUploadConsent' : 'autoDownloadConsent';
+                    if (checked && !(await confirmManualAction(msg(key), msg(consent), msg(key)))) return;
                     await automatic.setOption(name, checked);
-                } catch (error) { globalThis.toastr?.error(errorText(error)); }
+                } catch (error) { reportOperationError(error); }
                 finally { renderAuto(automatic.describe()); }
             });
         }
         const note = document.createElement('p'); note.className = 'dss_note'; note.textContent = msg('autoLimits'); root.append(note);
+        const connection = document.createElement('p'); connection.className = 'dss_note'; connection.textContent = msg(
+            state.connection?.mode === 'http' ? state.connection.privateIP ? 'httpLanMode' : 'httpMode' : 'secureMode'); root.append(connection);
         const status = document.createElement('p'); status.id = 'dss_auto_status'; status.setAttribute('role', 'status'); root.append(status);
         const actions = document.createElement('div'); actions.className = 'dss_actions'; root.append(actions);
         for (const [key, action] of [['autoPause', () => automatic.pause()], ['autoRetry', () => automatic.retry()]]) {
             const button = document.createElement('button'); button.className = 'menu_button'; button.textContent = msg(key);
-            button.addEventListener('click', () => action().catch(error => globalThis.toastr?.error(errorText(error)))); actions.append(button);
+            button.addEventListener('click', () => action().catch(reportOperationError)); actions.append(button);
         }
     }
     for (const input of root.querySelectorAll('input')) {
         input.checked = state[input.dataset.auto];
-        input.disabled = !state.supported;
+        input.disabled = input.dataset.auto === 'allowHttp' ? false : !state.supported && !input.checked;
     }
     root.querySelector('#dss_auto_status').textContent = msg(state.status) + '\n' + msg('autoDetails', {
         count: state.pending, dirty: state.dirty,
@@ -1134,12 +1208,12 @@ async function initializeAutomatic() {
             makeBackup, backup: sendBackup, conflict: resolveAutoConflict,
             events: { eventSource, eventTypes: event_types },
             render: renderAuto, changed: refreshSnapshot,
-            failure: error => globalThis.toastr?.error(errorText(error)),
+            failure: reportOperationError,
             reload: () => { setOperationState('reloading', true); location.reload(); },
         }, { account: getCurrentUserHandle() });
         await automatic.start();
         renderAuto(automatic.describe());
-    } catch (error) { globalThis.toastr?.error(errorText(error)); }
+    } catch (error) { reportOperationError(error); }
 }
 
 eventSource.on(event_types.APP_READY, () => {
@@ -1151,7 +1225,7 @@ globalThis.DeviceSettingsSync = {
     syncNow: manualPull,
     pullFromServer: manualPull,
     pushCurrentDevice: manualPush,
-    getDiagnostics: () => ({ ...diagnostics, automatic: automatic?.describe() }),
+    getDiagnostics: collectDiagnostics,
     openManager: showManager,
     // Cooperative bridge for workers/custom transports: report lifecycle only.
     beginModelActivity: () => automatic?.beginActivity(),

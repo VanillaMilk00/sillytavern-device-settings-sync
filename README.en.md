@@ -4,7 +4,7 @@
 
 Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.12.0**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. The first upgrade from 1.10.2 still requires **one normal SillyTavern restart** to load the new server bootstrap. After that, update the extension and refresh the page: an administrator's page automatically applies compatible server-plugin updates without another command or restart.
+Version **1.13.0**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. The first upgrade from 1.10.2 still requires **one normal SillyTavern restart** to load the new server bootstrap. After that, update the extension and refresh the page: an administrator's page automatically applies compatible server-plugin updates without another command or restart.
 
 ## Data transfer, request domains and opt-out options
 
@@ -82,13 +82,17 @@ try {
 
 The first enable, reopening a page or changing the sync scope performs one incremental reconciliation against local and server baselines. While idle, the extension does not reread all storage or make periodic network requests. Automatic download still follows the selected portable/all/selected localStorage scope; user IndexedDB data remains manual. Disabling automatic upload clears unsent upload work without disabling automatic download.
 
-Automatic mode requires secure HTTPS/localhost, Web Locks, Web Crypto, Web Workers, Resource Timing and native browser storage notifications. Keep the source browser signed in. Other devices receive new data only through manual sync or their own automatic-download check. Server and local backups may contain credentials; protect them.
+Manual sync works over both HTTP and HTTPS. For HTTP, including LAN IPs, domains and public IPs, enable **Allow automatic mode over HTTP** in Settings, review the unencrypted-transport and page-close limits, then separately enable upload and/or download. Neither direction is enabled by permission alone. LAN detection is informational. Browser-trusted localhost keeps standard mode.
+
+Automatic mode requires working IndexedDB, a hash worker, Resource Timing and native storage notifications. IndexedDB leases coordinate tabs when Web Locks are absent; the worker calculates the same SHA-256 without Web Crypto on HTTP. Losing ownership or an unconfirmed model request in another tab pauses automatic work. HTTP never registers a background service worker. A prepared small batch is best-effort on page close; unconfirmed work resumes next visit. Keep the source browser signed in.
+
+Manual failures remain visible in the panel and diagnostics. If the HTTP clipboard is unavailable, Copy diagnostics offers selectable text and a JSON download. Manual IndexedDB transfers share the HTTP hashing fallback, with capability checks before localStorage changes.
 
 Preferences, baselines and scheduling are internal data: excluded from ordinary sync, retained in full local rescue backups, and skipped by default during restore. The automatic queue uses a separate internal IndexedDB database hidden from user IndexedDB management and sync scope.
 
 ## Installation and upgrade
 
-Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. All 130 v1.12.0 Node unit/behavior tests and syntax checks pass. An isolated SillyTavern 1.14.0 host with Node.js 22 and Edge Chromium passed 30 management, 15 automatic-mode and 2 runtime-update browser checks, plus 10 server-security checks. Firefox, WebKit and physical mobile devices have not been tested. Earlier sync versions were also tested on SillyTavern 1.18.0; these results do not establish compatibility with every model extension, host version or browser. CI is configured for Windows/Linux and Node.js 18, 20 and 24.
+Requires SillyTavern 1.14.0+, Node.js 18+, and server plugins enabled. See [HTTP validation results](docs/HTTP_QA.md) for v1.13.0 coverage and limitations. Existing management, automatic-mode and runtime tests remain; CI covers Windows/Linux and Node.js 18, 20 and 24. Physical Android, Firefox and WebKit are unverified; mobile viewport emulation is not an Android device test.
 
 1. In Extensions → Install extension, enter:
 

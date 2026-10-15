@@ -129,7 +129,7 @@ try {
     await page.evaluate(() => { void DeviceSettingsSync.openManager(); });
     const manager = page.locator('.dss_manager').first();
     await manager.waitFor();
-    assert.equal(await manager.getByRole('checkbox', { name: 'Also back up before importing, restoring or removing local data', exact: true }).isChecked(), true);
+    assert.equal(await manager.getByRole('checkbox', { name: 'Back up complete data to the server before import, restore or removal', exact: true }).isChecked(), true);
     assert.equal(requests.length, 0);
     assert.equal(await manager.getByRole('button', { name: 'Reload to apply', exact: true }).isVisible(), false);
     const dialog = page.locator('dialog[open]').last();
@@ -215,7 +215,7 @@ try {
     assert.deepEqual(requests, ['POST ' + base + '/backups']);
     const importRescue = (await api('/backups')).body[0];
     assert.equal((await api('/backups/' + importRescue.id)).body.entries.find(item => item.key === 'ui.theme').value, 'dark');
-    await manager.getByRole('checkbox', { name: 'Also back up before importing, restoring or removing local data', exact: true }).uncheck();
+    await manager.getByRole('checkbox', { name: 'Back up complete data to the server before import, restore or removal', exact: true }).uncheck();
     requests.length = 0;
     await importFile({ 'qa:new': 'manual opt-out' });
     await applyImport();
@@ -248,7 +248,7 @@ try {
     await manager.getByRole('button', { name: 'Remove selected', exact: true }).click();
     await page.locator('dialog[open]').last().locator('.popup-button-cancel').click();
     assert.equal(await page.evaluate(() => localStorage.getItem('qa:settings')), 'other-tab');
-    await manager.getByRole('checkbox', { name: 'Also back up before importing, restoring or removing local data', exact: true }).check();
+    await manager.getByRole('checkbox', { name: 'Back up complete data to the server before import, restore or removal', exact: true }).check();
     requests.length = 0;
     await manager.getByRole('button', { name: 'Remove selected', exact: true }).click();
     await page.locator('dialog[open]').last().locator('.popup-button-ok').click();
@@ -282,7 +282,7 @@ try {
     assert.match(await manager.locator('tr[data-node-id="key:qa:document"] .dss_type').innerText(), /\.json \(inferred\)/u);
     assert.equal(await manager.getByRole('button', { name: 'Back up and clean', exact: true }).isDisabled(), true);
     pass('three-color analysis protects credentials/history and displays explicit versus inferred extensions');
-    await manager.getByRole('checkbox', { name: 'Also back up before importing, restoring or removing local data', exact: true }).uncheck();
+    await manager.getByRole('checkbox', { name: 'Back up complete data to the server before import, restore or removal', exact: true }).uncheck();
     await manager.getByRole('button', { name: 'Select recommended items', exact: true }).click();
     assert.equal(await manager.locator('input[aria-label="tt:cache"]').isChecked(), false);
     requests.length = 0;
@@ -381,7 +381,7 @@ try {
         await localized.locator('.dss_manager h3').waitFor();
         assert.equal(await localized.locator('.dss_manager h3').textContent(), title);
         const labels = await localized.locator('.dss_manager').innerText();
-        assert.equal(labels.includes('Also back up'), false);
+        assert.equal(labels.includes('Back up complete data'), false);
         await localized.evaluate(async () => {
             await Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})));
         });

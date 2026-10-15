@@ -12,7 +12,7 @@ function referencedLocaleKeys() {
     const keys = new Set();
     for (const match of source.matchAll(/(?:tr|formatText)\(\s*'([^']+)'/gu)) keys.add(match[1]);
     for (const match of source.matchAll(/data-i18n="(?:\[[^\]]+\])?([^"]+)"/gu)) keys.add(match[1]);
-    for (const match of messages.matchAll(/^    (\w+): '/gmu)) keys.add('dss.manager.' + match[1]);
+    for (const match of messages.matchAll(/^    (\w+): ['"]/gmu)) keys.add('dss.manager.' + match[1]);
     for (const action of ['pull', 'push']) keys.add(`dss.${action}.withIndexedDbTitle`);
     return [...keys].sort();
 }

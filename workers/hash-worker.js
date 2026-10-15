@@ -1,10 +1,8 @@
+import { digestBytes } from '../lib/sha256.js';
 const encoder = new TextEncoder();
 const deltaIsWorthwhile = (delta, value) => encoder.encode(JSON.stringify(delta)).byteLength <= encoder.encode(JSON.stringify(value)).byteLength * 0.75;
 
-function hash(value) {
-    return crypto.subtle.digest('SHA-256', encoder.encode(value)).then(buffer =>
-        [...new Uint8Array(buffer)].map(byte => byte.toString(16).padStart(2, '0')).join(''));
-}
+function hash(value) { return digestBytes(encoder.encode(value)); }
 
 function makeDelta(before, after) {
     let prefix = 0;
@@ -18,9 +16,10 @@ function makeDelta(before, after) {
 }
 
 self.addEventListener('message', async event => {
-    const { id, type, before, value } = event.data || {};
+    const { id, type, before, value, bytes } = event.data || {};
     try {
-        if (type === 'hash') self.postMessage({ id, hash: await hash(value) });
+        if (type === 'bytes') self.postMessage({ id, hash: await digestBytes(bytes) });
+        else if (type === 'hash') self.postMessage({ id, hash: await hash(value) });
         else if (type === 'prepare') {
             const afterHash = await hash(value);
             const delta = typeof before === 'string' && value.length > 256 * 1024 ? makeDelta(before, value) : null;

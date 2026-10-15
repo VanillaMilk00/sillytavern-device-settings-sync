@@ -27,7 +27,9 @@ const pass = name => console.log('PASS ' + (++count) + ' ' + name);
 const base = '/api/plugins/device-settings-sync';
 try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'en-US' });
-    await context.addInitScript(() => localStorage.setItem('language', 'en'));
+    await context.addInitScript(() => {
+        if (['http:', 'https:'].includes(location.protocol)) localStorage.setItem('language', 'en');
+    });
     const request = context.request;
     let { token } = await (await request.get(host.origin + '/csrf-token')).json();
     if (process.env.DSS_QA_HANDLE) {

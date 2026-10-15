@@ -41,6 +41,7 @@ test('storage observer listens to native key and clear events from an isolated s
     await observer.start();
     child.dispatch('storage', { key: '設定:😺' });
     child.dispatch('storage', { key: null });
+    child.dispatch('storage', { key: 'session-only', storageArea: {} });
     assert.deepEqual(keys, ['設定:😺']);
     assert.equal(clearCount, 1);
     assert.equal(frame.style.cssText, 'display:none!important;width:0;height:0;border:0');
