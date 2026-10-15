@@ -2,6 +2,17 @@
 
 日期：2026-10-15（Asia/Taipei）。測試使用隔離 SillyTavern 1.14.0、獨立資料目錄與測試帳戶，Windows、Node.js 22.23.0、Edge Chromium 155。正式 NAS 未執行更新或寫入測試。
 
+## v1.13.1 鍵名相容修補回歸
+
+- 155 項 Node 單元／行為測試、語法與發布 manifest 雜湊核對通過。
+- 補上 450 鍵完整提交、超過 512 字元鍵名、空字串鍵、明確勾選範圍、收據重試、同步歷史還原與一般模式排除邊界測試。先在舊程式重現拒絕，再確認修正後通過。
+- 實際非安全 HTTP 區網環境通過 21 項檢查，包含長／空鍵的手動及自動上傳、未選取資料保留，以及另一個獨立瀏覽器儲存環境的完整同步。兩個儲存環境均使用 Edge Chromium，並非跨瀏覽器引擎驗證。
+- 瀏覽器整合測試另發現自動完整核對漏讀空字串鍵，會誤判成資料衝突；新增單元測試重現、修正後重新執行完整 HTTP 檢查。
+- localhost 安全環境的 16 項自動模式／三語／手動完整同步回歸，以及 10 項伺服器登入、CSRF、帳戶隔離與原子提交檢查通過。
+- 本次未驗證實體 Android、Firefox、WebKit 或憑證 HTTPS；412×915 行動視窗模擬不等於實體手機測試。正式 NAS 與使用者待傳佇列未修改。
+
+English: v1.13.1 passed 155 unit/behavior tests, syntax and release-hash checks, 21 genuinely insecure HTTP browser checks, 16 localhost automatic-mode regressions and 10 server security checks. Regression fixtures first reproduced rejected long keys and missed empty keys before the fixes. An independent Edge Chromium storage context restored the original keys successfully; this is not a cross-engine or physical Android test. Production NAS data was not modified.
+
 ## 已通過的檢查
 
 | 項目 | 結果 |

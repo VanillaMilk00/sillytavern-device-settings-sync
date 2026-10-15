@@ -64,15 +64,17 @@ function validScope(scope) {
 }
 
 function allowed(key, value, scope) {
-    if (isInternalKey(key) || key.length > 512) return false;
+    if (isInternalKey(key)) return false;
     if (scope.mode === 'full') return true;
     if (scope.mode === 'selected') return inScope(key, scope.selectedScope);
-    return key.length > 0 && isPortableStorageEntry(key, value ?? '', { maxValueBytes: scope.maxValueBytes })
+    return key.length > 0 && key.length <= 512 && isPortableStorageEntry(key, value ?? '', { maxValueBytes: scope.maxValueBytes })
         && !matchesAdditionalExclude(key, scope.additionalExcludes);
 }
 
 function validateMutation(raw, current, scope) {
-    if (!raw || typeof raw !== 'object' || typeof raw.key !== 'string' || raw.key.length > 512) {
+    // Full/explicit scopes preserve native localStorage keys. The portable-only
+    // key restrictions belong in allowed(), not in the shared payload validator.
+    if (!raw || typeof raw !== 'object' || typeof raw.key !== 'string') {
         throw new StorageError('incrementalInvalidRequest');
     }
     const key = raw.key;

@@ -52,6 +52,18 @@ function reconciliationFixture({ prefs, local, baseline, remote, oldRevision = 1
     return { instance, applied, get savedRows() { return savedRows; }, get queued() { return queued; }, snapshot };
 }
 
+test('automatic reconciliation reads empty and long keys in full/selected mode without inventing missing keys', async () => {
+    const longKey = '設定🙂'.repeat(180);
+    const values = new Map([['', 'empty'], [longKey, 'long'], ['normal', 'portable'], ['sillytavern_settings_sync_device_id', 'private']]);
+    const keys = [...values.keys()];
+    const instance = Object.create(IncrementalAutoSync.prototype);
+    instance.storage = { length: keys.length + 1, key: index => keys[index] ?? null, getItem: key => values.get(key) ?? null };
+    instance.win = { setTimeout };
+    assert.deepEqual(await instance.readLocalSnapshot({ fullStorage: true }), new Map([['', 'empty'], [longKey, 'long'], ['normal', 'portable']]));
+    assert.deepEqual(await instance.readLocalSnapshot({ selectedScope: { kind: 'keys', keys: ['', longKey] } }), new Map([['', 'empty'], [longKey, 'long']]));
+    assert.deepEqual(await instance.readLocalSnapshot({}), new Map([['normal', 'portable']]));
+});
+
 test('native change notifications only coalesce key names and debounce for ten seconds', () => {
     const clock = new FakeClock();
     const instance = scheduler(clock);

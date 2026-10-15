@@ -87,8 +87,9 @@ try {
     assert.equal((await anonymous.post(base + '/full-commit', {})).status(), 403);
     assert.equal((await admin.context.post(base + '/full-commit', { data: {} })).status(), 403);
     pass('full-storage routes require login and CSRF');
+    const longKey = 'qa:long:設定🙂'.repeat(100);
     const full = { operationId: 'full_' + Date.now(), deviceId: 'qa_full_device', expectedRevision: 0,
-        entries: [{ key: 'history:中文', value: '大'.repeat(140000) }, { key: '', value: '' }] };
+        entries: [{ key: 'history:中文', value: '大'.repeat(140000) }, { key: '', value: '' }, { key: longKey, value: '完整原始長鍵名' }] };
     const firstFull = await other.post(base + '/full-commit', full);
     assert.equal(firstFull.status(), 200);
     const fullReceipt = await firstFull.json();
@@ -98,13 +99,14 @@ try {
     const fullState = await (await other.context.get(base + '/full-state')).json();
     assert.equal(fullState.entries['history:中文'].length, 140000);
     assert.equal(fullState.entries[''], '');
+    assert.equal(fullState.entries[longKey], '完整原始長鍵名');
     assert.equal(fullState.revision, fullReceipt.revision);
     assert.equal((await other.post(base + '/full-commit', { ...full, operationId: full.operationId + '_race' })).status(), 409);
     assert.equal((await other.post(base + '/full-commit', { ...full, operationId: full.operationId + '_invalid',
         expectedRevision: fullState.revision, entries: [...full.entries, { key: 'sillytavern_settings_sync_device_id', value: 'bad' }],
     })).status(), 400);
     assert.deepEqual(await (await other.context.get(base + '/full-state')).json(), fullState);
-    pass('full snapshots keep large values, receipt replay and account isolation without partial writes');
+    pass('full snapshots keep long keys, large values, receipt replay and account isolation without partial writes');
     assert.equal((await anonymous.context.get(base + '/incremental/auto-upload?mode=full')).status(), 403);
     const adminSlotBefore = await (await admin.context.get(base + '/incremental/auto-upload?mode=full')).json();
     assert.equal(await (await other.context.get(base + '/incremental/auto-upload?mode=full')).json(), null);

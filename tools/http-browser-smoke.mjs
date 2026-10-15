@@ -312,27 +312,69 @@ try {
         throw new Error('Full/selected HTTP upload was not confirmed');
     }
     await scopeMode('full');
+    const longKey = 'qa:long:設定🙂'.repeat(100);
+    await page.evaluate(key => {
+        localStorage.setItem(key, 'full original 長鍵名');
+        localStorage.setItem('', 'full empty key');
+    }, longKey);
     await page.evaluate(() => DeviceSettingsSync.pushCurrentDevice());
-    assert.equal((await api('/incremental/state?mode=full')).entries['qa:large_cache'].hash, incrementalHash('a'.repeat(4 * 1024 * 1024)));
+    const fullMetadata = await api('/incremental/state?mode=full');
+    assert.equal(fullMetadata.entries['qa:large_cache'].hash, incrementalHash('a'.repeat(4 * 1024 * 1024)));
+    assert.equal(fullMetadata.entries[longKey].hash, incrementalHash('full original 長鍵名'));
+    assert.equal(fullMetadata.entries[''].hash, incrementalHash('full empty key'));
     await toggle('allowHttp', true); await toggle('upload', true);
     await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.status === 'autoReady');
-    await page.evaluate(() => localStorage.setItem('qa:large_cache', localStorage.getItem('qa:large_cache') + 'Δ🙂'));
+    await page.evaluate(key => {
+        localStorage.setItem('qa:large_cache', localStorage.getItem('qa:large_cache') + 'Δ🙂');
+        localStorage.setItem(key, 'full automatic 長鍵名');
+    }, longKey);
     const largeHash = incrementalHash('a'.repeat(4 * 1024 * 1024) + 'Δ🙂');
     await waitFullHash('qa:large_cache', largeHash);
+    await waitFullHash(longKey, incrementalHash('full automatic 長鍵名'));
     await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.pending === 0);
     await toggle('upload', false);
-    pass('full HTTP manual and automatic sync preserve and hash a large original string');
+    pass('full HTTP manual and automatic sync preserve long/empty keys and a large original string');
 
-    await page.evaluate(() => localStorage.setItem('sillytavern_settings_sync_auto_default-user:localstorage-scope', JSON.stringify({ kind: 'keys', keys: ['qa:http'] })));
+    await page.evaluate(key => localStorage.setItem('sillytavern_settings_sync_auto_default-user:localstorage-scope', JSON.stringify({ kind: 'keys', keys: ['qa:http', key, ''] })), longKey);
     await scopeMode('selected');
+    await page.evaluate(key => {
+        localStorage.setItem(key, 'selected manual 長鍵名');
+        localStorage.setItem('', 'selected manual empty key');
+    }, longKey);
     await page.evaluate(() => DeviceSettingsSync.pushCurrentDevice());
+    const selectedManual = await api('/full-state');
+    assert.equal(selectedManual.entries[longKey], 'selected manual 長鍵名');
+    assert.equal(selectedManual.entries[''], 'selected manual empty key');
     await toggle('upload', true);
     await page.waitForFunction(() => DeviceSettingsSync.getDiagnostics().automatic.status === 'autoReady');
-    await page.evaluate(() => localStorage.setItem('qa:http', 'only-selected'));
+    await page.evaluate(key => {
+        localStorage.setItem('qa:http', 'only-selected');
+        localStorage.setItem(key, 'selected automatic 長鍵名');
+        localStorage.setItem('', 'selected automatic empty key');
+    }, longKey);
     const selectedMetadata = await waitFullHash('qa:http', incrementalHash('only-selected'));
+    await waitFullHash(longKey, incrementalHash('selected automatic 長鍵名'));
+    await waitFullHash('', incrementalHash('selected automatic empty key'));
     assert.equal(selectedMetadata.entries['qa:large_cache'].hash, largeHash);
     await toggle('allowHttp', false);
-    pass('selected HTTP sync updates only selected keys and preserves the rest of the full stream');
+    pass('selected HTTP manual/automatic sync includes long/empty keys and preserves unselected values');
+
+    const receiver = await browser.newContext({ locale: 'en-US' });
+    await receiver.addCookies(await context.cookies());
+    await receiver.addInitScript(() => {
+        if (['http:', 'https:'].includes(location.protocol)) {
+            localStorage.setItem('language', 'en');
+            localStorage.setItem('sillytavern_settings_sync_auto_default-user:localstorage-mode', 'full');
+        }
+    });
+    const receiverPage = await receiver.newPage();
+    await ready(receiverPage);
+    await receiverPage.evaluate(() => DeviceSettingsSync.pullFromServer({ reload: false }));
+    assert.equal(await receiverPage.evaluate(key => localStorage.getItem(key), longKey), 'selected automatic 長鍵名');
+    assert.equal(await receiverPage.evaluate(() => localStorage.getItem('')), 'selected automatic empty key');
+    assert.equal((await receiverPage.evaluate(() => DeviceSettingsSync.getDiagnostics())).lastAction, 'download');
+    await receiver.close();
+    pass('another browser storage context restores the original long and empty keys from the server');
     }
 
     await toggle('allowHttp', false);

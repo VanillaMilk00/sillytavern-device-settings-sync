@@ -1,10 +1,10 @@
 {
   "loaderProtocol": 1,
-  "version": "1.13.0",
+  "version": "1.13.1",
   "files": [
     {
       "path": "server-plugin/index.js",
-      "sha256": "3927006b1bc0c26896f02156a750cd1499f2219168c66c7ab6eef468189e964d"
+      "sha256": "dea939443ff9e5be204fc147f15b5d7f74253055094db3b086d43750b2c45cc1"
     },
     {
       "path": "server-plugin/worker-runner.mjs",
@@ -24,7 +24,7 @@
     },
     {
       "path": "server-plugin/incremental.js",
-      "sha256": "a105cc9a13e9bc5b7e3076085d944c58d19abe490a209376515bae3eddaa7524"
+      "sha256": "beaaecc9fd126f6708fc301e72e424bcc7115a0dd9070cbb3454ceba5e1f9e99"
     },
     {
       "path": "server-plugin/state.js",
@@ -32,7 +32,7 @@
     },
     {
       "path": "lib/filter.js",
-      "sha256": "9875f3dbd6d2a5db8b6ab27334938af62cb1be85a1dca42ae8ee4a85c5a2dde0"
+      "sha256": "a4f20c00a58c9c87b8db2d3ff4fea2556de84b8c93c0c087786640f51b22d053"
     },
     {
       "path": "lib/indexeddb-model.js",
@@ -43,5 +43,5 @@
       "sha256": "87566eafe7934b5b2fecb1148131c0ba73089b247198c46437bfd1aca7db8acb"
     }
   ],
-  "build": "9611abb1cb23af67bcb4afa624c8ee8a0fafc381fdc04e77bbfd296212209cea"
+  "build": "99986750e6ba587de88630da34d5e3819877b9172242b4b3363b987a25febeb2"
 }

@@ -78,6 +78,58 @@ test('duplicate mutations and stale per-key hashes fail without publishing any p
     });
 });
 
+test('manual full snapshots preserve long localStorage keys across the incremental storage adapter', async () => {
+    await withStore('full', async (_root, store) => {
+        const longKey = '設定:🧋'.repeat(140);
+        const entries = Array.from({ length: 449 }, (_, index) => ({ key: `setting:${index}`, value: `value:${index}` }));
+        entries.push({ key: longKey, value: '長鍵名的原始內容🙂' });
+        const input = { operationId: 'manual_long_key_0001', deviceId: 'device_0001', expectedRevision: 0, entries };
+        const receipt = await store.commitFullSnapshot(input);
+        assert.equal(receipt.revision, 1);
+        assert.equal((await store.snapshot()).entries[longKey].value, entries.at(-1).value);
+        assert.equal(Object.keys((await store.snapshot()).entries).length, 450);
+        assert.deepEqual(await store.commitFullSnapshot(input), { ...receipt, replayed: true });
+
+        const replacement = new IncrementalStateStore(store.root, 'full');
+        assert.equal((await replacement.snapshot()).entries[longKey].value, entries.at(-1).value);
+        await replacement.commitFullSnapshot({ ...input, operationId: 'manual_long_key_0002', expectedRevision: 1,
+            entries: [{ key: longKey, value: '更新後的內容' }] });
+        assert.equal((await replacement.snapshot()).entries[longKey].value, '更新後的內容');
+        const versions = await replacement.listVersions();
+        const previous = await replacement.getVersion(versions[0].id);
+        assert.equal(previous.entries.find(item => item.key === longKey).value, entries.at(-1).value);
+        await replacement.restoreVersion(versions[0].id, 2, 'device_0001');
+        assert.equal((await replacement.snapshot()).entries[longKey].value, entries.at(-1).value);
+        assert.equal(Object.values((await replacement.snapshot()).entries).filter(item => !item.deleted).length, 450);
+    });
+});
+
+test('automatic full and explicitly selected mutations support long keys without broadening portable scope', async () => {
+    const longKey = 'x'.repeat(513);
+    await withStore('full', async (_root, store) => {
+        await store.commit(identity('auto_long_key_0001', 0, [
+            { key: longKey, beforeHash: null, afterHash: incrementalHash('original'), value: 'original' },
+            { key: 'outside:selected', beforeHash: null, afterHash: incrementalHash('keep'), value: 'keep' },
+        ]));
+        const selected = { mode: 'selected', scope: { mode: 'selected', selectedScope: { kind: 'keys', keys: [longKey] } } };
+        await store.commit(identity('auto_long_key_0002', 1, [
+            { key: longKey, beforeHash: incrementalHash('original'), afterHash: incrementalHash('changed'), value: 'changed' },
+        ], selected));
+        assert.equal((await store.snapshot()).entries[longKey].value, 'changed');
+        assert.equal((await store.getVersion('auto-latest')).entries.find(item => item.key === longKey).value, 'changed');
+        await store.commitFullSnapshot({ operationId: 'selected_long_key_0003', deviceId: 'device_0001', expectedRevision: 2,
+            scope: { kind: 'keys', keys: [longKey] }, entries: [] });
+        assert.equal((await store.snapshot()).entries[longKey].deleted, true);
+        assert.equal((await store.snapshot()).entries['outside:selected'].value, 'keep');
+    });
+    await withStore('portable', async (_root, store) => {
+        await assert.rejects(store.commit(identity('portable_long_key_0001', 0, [
+            { key: longKey, beforeHash: null, afterHash: incrementalHash('not portable'), value: 'not portable' },
+        ], { mode: 'portable', scope: { mode: 'portable' } })), error => error.code === 'incrementalScopeViolation');
+        assert.equal((await store.metadata()).revision, 0);
+    });
+});
+
 test('automatic server versions merge for thirty minutes, then retain only the newest five', async () => {
     await withStore('full', async (_root, store) => {
         let revision = 0;

@@ -4,7 +4,9 @@
 
 Manually synchronize settings between devices using the same SillyTavern account, with optional automatic synchronization of portable browser settings.
 
-Version **1.13.0**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. The first upgrade from 1.10.2 still requires **one normal SillyTavern restart** to load the new server bootstrap. After that, update the extension and refresh the page: an administrator's page automatically applies compatible server-plugin updates without another command or restart.
+Version **1.13.1**. IndexedDB is included only in manual sync for explicitly selected items; automatic localStorage sync does not access it. The first upgrade from 1.10.2 still requires **one normal SillyTavern restart** to load the new server bootstrap. After that, update the extension and refresh the page: an administrator's page automatically applies compatible server-plugin updates without another command or restart.
+
+1.13.1 fixes long keys causing “Invalid incremental sync request” in full/selected mode. After updating and confirming the server plugin has applied the update, use “Resume / retry automatic actions” if automatic mode was paused. Pending work is retained; do not clear browser storage.
 
 ## Data transfer, request domains and opt-out options
 

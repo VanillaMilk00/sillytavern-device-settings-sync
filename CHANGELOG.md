@@ -2,6 +2,29 @@
 
 ## 未發布 / Unreleased
 
+## 1.13.1 - 2026-10-15
+
+### 繁體中文
+
+- 修正完整 localStorage 手動及自動上傳仍受一般模式的 512 字元鍵名限制，導致整批請求回報「增量同步請求無效」的問題。
+- 明確勾選的範圍同樣支援長鍵名與空字串鍵；一般可攜式模式的排除規則、內部鍵保護、容量限制與衝突檢查維持不變。
+- 修正自動模式完整核對漏讀空字串鍵，導致相同資料被誤判成不同、出現不必要衝突詢問的問題。
+- 補上實際增量儲存層、手動完整提交、同步歷史，以及隔離 HTTP 瀏覽器的長鍵名回歸測試。
+
+### 简体中文
+
+- 修复完整 localStorage 手动和自动上传仍受普通模式的 512 字符键名限制，导致整批请求报告“增量同步请求无效”的问题。
+- 明确勾选的范围同样支持长键名和空字符串键；普通可移植模式的排除规则、内部键保护、容量限制和冲突检查保持不变。
+- 修复自动模式完整核对漏读空字符串键，导致相同数据被误判成不同、出现不必要冲突询问的问题。
+- 增加实际增量存储层、手动完整提交、同步历史，以及隔离 HTTP 浏览器的长键名回归测试。
+
+### English
+
+- Fix full localStorage manual and automatic uploads incorrectly inheriting the portable mode's 512-character key limit and rejecting the entire batch as an invalid incremental request.
+- Explicit selections also accept long and empty keys. Portable filters, internal-key protection, size limits and conflict checks remain unchanged.
+- Include empty keys in automatic reconciliation so identical snapshots do not trigger a false conflict prompt.
+- Add regression coverage for the actual incremental store, manual full commits, sync history and long keys in an isolated HTTP browser.
+
 ## 1.13.0 - 2026-10-15
 
 ### HTTP 相容性 / HTTP compatibility
