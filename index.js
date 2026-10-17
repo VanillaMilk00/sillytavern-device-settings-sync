@@ -11,7 +11,8 @@ import { openStorageManager } from './ui/storage-manager.js';
 import { probeCapacity } from './lib/capacity-probe.js';
 import { IncrementalAutoSync } from './lib/incremental-auto-sync.js';
 import { IndexedDbError, snapshotIndexedDB, inspectIndexedDB, readIndexedDbStorePage, serializeIndexedDbArchive, mergeIndexedDbArchive, mergeArchiveObjects, deleteIndexedDbItems, selectIndexedDbArchive } from './lib/indexeddb-model.js';
-import { uploadIndexedDbArchive, downloadIndexedDbArchive, digestHex, preflightIndexedDbTransfer } from './lib/indexeddb-transfer.js';
+import { uploadIndexedDbArchive, downloadIndexedDbArchive, digestHex, preflightIndexedDbTransfer, indexedDbHashDiagnostics } from './lib/indexeddb-transfer.js';
+import { safeHashFailure } from './lib/hash-client.js';
 import { connectionInfo } from './lib/environment.js';
 import { AUTO_PREFIX, planRemote, sortedEntries } from './lib/auto-core.js';
 import {
@@ -21,7 +22,7 @@ import {
     snapshotPortableStorage,
 } from './lib/sync-core.js';
 
-const VERSION = '1.13.1';
+const VERSION = '1.13.2';
 const SETTINGS_KEY = 'deviceSettingsSync';
 const API_BASE = '/api/plugins/device-settings-sync';
 const DEVICE_KEY = 'sillytavern_settings_sync_device_id';
@@ -49,6 +50,7 @@ const diagnostics = {
     lastSyncAt: '',
     lastError: '',
     lastErrorCode: '',
+    lastErrorDetails: {},
     stage: 'initializing',
 };
 
@@ -201,14 +203,18 @@ function indexedDbArchiveCount(archive) {
 }
 async function indexedDbArchiveHash(archive) {
     const stable = { ...archive, createdAt: '' };
-    return digestHex(new TextEncoder().encode(serializeIndexedDbArchive(stable)));
+    diagnostics.stage = 'indexeddb-hash-archive';
+    try { return await digestHex(new TextEncoder().encode(serializeIndexedDbArchive(stable))); }
+    catch (error) { error.operationStage = 'indexeddb-hash-archive'; throw error; }
 }
 async function indexedDbSyncHash(archive) {
     // Native database versions are device-local migration counters. The
     // transferable schema (stores/indexes) is fingerprinted separately, so a
     // harmless version-number difference does not create a false conflict.
     const stable = { ...archive, createdAt: '', databases: archive.databases.map(({ version, ...database }) => database) };
-    return digestHex(new TextEncoder().encode(serializeIndexedDbArchive(stable)));
+    diagnostics.stage = 'indexeddb-hash-sync';
+    try { return await digestHex(new TextEncoder().encode(serializeIndexedDbArchive(stable))); }
+    catch (error) { error.operationStage = 'indexeddb-hash-sync'; throw error; }
 }
 async function backupIndexedDbArchive(archive, reason) {
     const archiveHash = await indexedDbArchiveHash(archive);
@@ -245,7 +251,9 @@ async function fetchIndexedDbState(scope) {
         return await downloadIndexedDbArchive(request, { metadata,
             chunkPath: index => `${transferPath}/chunks/${index}` });
     } finally {
+        const stage = diagnostics.stage;
         await request(transferPath, { method: 'DELETE' }).catch(() => {});
+        diagnostics.stage = stage;
     }
 }
 
@@ -517,7 +525,7 @@ function restorePullResult() {
 function setOperationState(status, inFlight) {
     diagnostics.status = status;
     operationInFlight = inFlight;
-    if (!inFlight && status === 'manual-ready') { diagnostics.lastErrorCode = ''; diagnostics.stage = 'ready'; }
+    if (!inFlight && status === 'manual-ready') { diagnostics.lastErrorCode = ''; diagnostics.lastErrorDetails = {}; diagnostics.stage = 'ready'; }
     automatic?.operationStateChanged(inFlight);
     for (const button of document.querySelectorAll('#device_settings_sync_panel button')) {
         button.disabled = inFlight;
@@ -569,6 +577,9 @@ function reportOperationError(error) {
     }
     diagnostics.lastError = errorText(error);
     diagnostics.lastErrorCode = error?.code || (error?.status ? 'HTTP_' + error.status : error?.name || 'unknown');
+    diagnostics.lastErrorDetails = error?.code === 'autoHashUnavailable' ? safeHashFailure(error.details) : {};
+    if (['indexeddb-verify-download', 'indexeddb-hash-archive', 'indexeddb-hash-sync'].includes(error?.operationStage)) diagnostics.stage = error.operationStage;
+    if (error?.localStorageUploaded === true) diagnostics.lastError = msg('indexedDbPartialUpload', { error: diagnostics.lastError });
     if (!operationInFlight) diagnostics.status = 'error';
     renderStatus();
     const notify = error?.code === 'operationBusy' ? 'warning' : 'error';
@@ -827,6 +838,12 @@ async function manualPush() {
     catch (error) { reportOperationError(error); throw error; }
 }
 
+async function finishManualIndexedDbUpload() {
+    if (!indexedDbConfig().enabled) return;
+    try { await syncIndexedDb('upload'); }
+    catch (error) { error.localStorageUploaded = true; throw error; }
+}
+
 async function manualPushLocked() {
     if (operationInFlight) throw new StorageError('operationBusy');
     setOperationState('saving', true);
@@ -854,7 +871,7 @@ async function manualPushLocked() {
                 }) }) : remote;
             diagnostics.revision = state.revision;
             diagnostics.pushedMutations += changes.length;
-            if (indexedDbConfig().enabled) await syncIndexedDb('upload');
+            await finishManualIndexedDbUpload();
             diagnostics.lastAction = 'upload';
             diagnostics.lastSyncAt = new Date().toISOString();
             diagnostics.lastError = '';
@@ -877,7 +894,7 @@ async function manualPushLocked() {
 
         diagnostics.revision = Math.max(0, Number(state?.revision) || diagnostics.revision);
         diagnostics.pushedMutations += mutations.length;
-        if (indexedDbConfig().enabled) await syncIndexedDb('upload');
+        await finishManualIndexedDbUpload();
         diagnostics.lastAction = 'upload';
         diagnostics.lastSyncAt = new Date().toISOString();
         diagnostics.lastError = '';
@@ -1028,6 +1045,7 @@ function collectDiagnostics() {
     const state = automatic?.describe();
     if (state) delete state.errorDetail;
     return { ...diagnostics, connection: connectionInfo(window), browser: navigator.userAgent,
+        hashing: { automatic: automatic?.hashes?.describe?.() || null, indexedDB: indexedDbHashDiagnostics() },
         automatic: state, device: getDeviceId(false).slice(-8) };
 }
 

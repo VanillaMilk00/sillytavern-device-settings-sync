@@ -2,6 +2,20 @@
 
 日期：2026-10-15（Asia/Taipei）。測試使用隔離 SillyTavern 1.14.0、獨立資料目錄與測試帳戶，Windows、Node.js 22.23.0、Edge Chromium 155。正式 NAS 未執行更新或寫入測試。
 
+## v1.13.2 Safari 回報的防禦性修補（2026-10-18）
+
+- 169 項單元／行為測試、語法檢查、後端發布雜湊及傳統 Worker 產物一致性檢查通過。新增測試以原生 Node SHA-256 比對逐塊狀態、填補邊界、中文、Emoji、不成對 surrogate、二進位切片、DataView 及空輸入。
+- 模擬模組 Worker 建構失敗、非同步載入錯誤、啟動逾時、自檢失敗、傳送／接收失敗、錯誤確認、處理中停止及分塊逾時，確認有限次重試、後續明確重試、排隊互斥與銷毀取消。不將純 JavaScript HTTP 雜湊移回主執行緒。
+- 實際非安全 HTTP 的 8 項瀏覽器檢查通過：正常模組 Worker、故意封鎖模組後的傳統 Worker、處理中斷與重建、逾時後重試、localStorage 提交後才發生的 IndexedDB 校驗失敗、手動重新上傳，以及另一個獨立瀏覽器儲存環境的 IndexedDB 合併還原。
+- 多 MiB 二進位測試確實使用可轉移緩衝區；每次送進 Worker 最多 256 KiB，原始緩衝區沒有被移除或改寫。這是**校驗分塊**，IndexedDB 網路傳輸仍沿用 1 MiB 分塊、128 MiB 歸檔上限與既有 API 格式。
+- 實際注入 IndexedDB 失敗時，其伺服器修訂未變；localStorage 已提交的部分明確提示成功，不宣稱整筆成功。診斷保留 `indexeddb-verify-download` 而非清除暫存的 DELETE 路徑，且只附錯誤分類、模式及計數。另一環境的本機額外紀錄在還原後保留。
+- 完整非安全 HTTP 的 21 項檢查、localhost 安全環境的 16 項自動模式／三語回歸，以及 10 項伺服器登入、CSRF、帳戶隔離及原子提交檢查通過。
+- 測試平台為 Windows／Node.js 22.23.0／Edge Chromium 155；這次沒有把 Safari User-Agent 模擬當成 Safari 測試。原回報者的 iPhone／Safari 問題未重現，實機 Safari、Firefox、WebKit 與實體 Android 仍待驗證，需由回報者更新後回測。正式 NAS 未修改。
+
+重跑故障整合測試：在有獨立 `data-http-*` 或 `data-hash-*` 目錄的隔離酒館，設定與下方 HTTP 測試相同的 `DSS_QA_ALLOW_MUTATION`、`DSS_QA_URL`、`DSS_QA_DATA_ROOT`、`DSS_PLAYWRIGHT_MODULE` 及 `DSS_QA_OUTPUT`，執行 `node tools/hash-browser-smoke.mjs`。結果寫入 `hash-results.json`。腳本只接受本機介面的 HTTP 位址，且會修改測試帳戶資料，不可用於日常酒館。
+
+English: v1.13.2 passed 169 unit/behavior tests, 8 actual HTTP browser fault/recovery checks, 21 general HTTP checks, 16 localhost automatic-mode regressions and 10 server security checks. Hashing chunks are capped at 256 KiB, while the existing 1 MiB network chunks, SHA-256, archive limit and server format remain unchanged. These are Edge Chromium tests with deliberate worker faults, not reproduction or certification on the reporter's physical iPhone/Safari. Production NAS data was not modified.
+
 ## v1.13.1 鍵名相容修補回歸
 
 - 155 項 Node 單元／行為測試、語法與發布 manifest 雜湊核對通過。

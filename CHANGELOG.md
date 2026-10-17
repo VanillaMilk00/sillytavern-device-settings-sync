@@ -2,6 +2,32 @@
 
 ## 未發布 / Unreleased
 
+## 1.13.2 - 2026-10-18
+
+### 繁體中文
+
+- 針對 Safari／HTTP 的雜湊失敗回報，加入同源、無模組相依的傳統 Worker 備援與實際自我檢查。運算途中停止時最多重建並重試一次；明確重試不再沿用永久失效的 Worker。
+- IndexedDB 大型校驗改為 256 KiB 可轉移分塊，逐塊確認並保留原始資料供重試；下載不再同時保留整份解碼分塊與目的緩衝區。雜湊演算法、伺服器摘要、容量上限及資料格式不變，不略過校驗。
+- 分辨背景程式載入、運算異常、自我檢查、訊息傳輸與逾時。診斷只包含分類及計數，不包含設定值、鍵名或原始例外內容；保留真正的校驗失敗階段，不再被刪除傳輸暫存的請求蓋掉。
+- localStorage 已上傳但 IndexedDB 失敗時，明確顯示部分完成。HTTP 仍不使用背景 Service Worker，也不將 JavaScript 大型雜湊轉回畫面執行緒。
+- 以故障注入與隔離環境驗證；未重現回報者的 iPhone／Safari 實機情境，仍需回測，不宣稱所有 Safari 問題已解決。
+
+### 简体中文
+
+- 针对 Safari／HTTP 的哈希失败反馈，增加同源、无模块依赖的传统 Worker 后备和实际自检。运算途中停止时最多重建重试一次；明确重试不再沿用永久失效的 Worker。
+- IndexedDB 大型校验改为 256 KiB 可转移分块，逐块确认并保留原数据供重试；下载不再同时保留整份解码分块和目标缓冲区。算法、服务器摘要、容量上限和数据格式不变，不跳过校验。
+- 区分加载、运算异常、自检、消息传输和超时；诊断只含分类与计数，不含设置值、键名或原始异常内容。保留真正的校验失败阶段，不再被删除传输临时文件的请求覆盖。
+- localStorage 已上传但 IndexedDB 失败时明确提示部分完成。HTTP 仍不使用后台 Service Worker，也不在界面线程执行大型 JavaScript 哈希。
+- 使用故障注入和隔离环境验证；未重现反馈者的 iPhone／Safari 实机场景，仍需回测，不宣称所有 Safari 问题已解决。
+
+### English
+
+- Harden Safari/HTTP hashing with a self-contained, same-origin classic-worker fallback and real startup tests. A failed job gets at most one worker replacement/retry; later explicit retries can create a healthy worker.
+- Hash large IndexedDB data in acknowledged 256 KiB transferable chunks while preserving the source for retries. Downloads no longer retain both all decoded chunks and the destination buffer. Preserve SHA-256, server digests, size limits and data formats; never skip integrity checks.
+- Distinguish loading, execution, self-test, messaging and timeout failures. Diagnostics contain only classifications/counters, not values, keys or raw exception content. Keep the verification failure stage instead of the temporary-transfer cleanup request.
+- Explicitly report successful localStorage upload followed by IndexedDB failure. HTTP still has no background service worker or main-thread JavaScript hashing fallback.
+- Validate through fault injection and isolated tests. The reporter's physical iPhone/Safari failure remains unreproduced and requires follow-up testing.
+
 ## 1.13.1 - 2026-10-15
 
 ### 繁體中文
